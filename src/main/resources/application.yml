@@ -1,0 +1,37 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: pingpong-saas
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/pingpong_saas?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: ${DB_PASSWORD:your_password}
+
+# JWT 配置（生产环境通过环境变量 JWT_SECRET 注入）
+jwt:
+  secret: ${JWT_SECRET:PingPongSaas2026SecretKeyForJwtSigning!!}
+
+# CORS 配置（生产环境通过环境变量 CORS_ALLOWED_ORIGINS 注入，多个域名用逗号分隔）
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.pingpong.entity
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      table-underline: true
+
+logging:
+  level:
+    com.pingpong.mapper: DEBUG

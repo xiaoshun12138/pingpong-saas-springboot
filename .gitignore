@@ -1,0 +1,27 @@
+# Compiled class files
+target/
+*.class
+
+# Log files
+*.log
+app.log
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar
+
+# Application config with secrets
+# application.yml 含数据库密码等，但开源展示用，保留

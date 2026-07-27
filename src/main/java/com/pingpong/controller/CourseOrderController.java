@@ -1,0 +1,140 @@
+package com.pingpong.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.pingpong.common.R;
+import com.pingpong.entity.CourseOrder;
+import com.pingpong.entity.CourseType;
+import com.pingpong.entity.Student;
+import com.pingpong.service.ICourseOrderService;
+import com.pingpong.service.ICourseTypeService;
+import com.pingpong.service.IStudentService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * 课包订单控制器
+ * 提供订单的增删改查接口，订单记录学员购买课包的信息和课时消耗进度。
+ * 数据权限：店长只能看到自己门店的订单，老板可以看全部或指定门店。
+ * 重要：课时变动（remainingLessons / consumedLessons）必须通过消课/退款接口，不允许直接 PUT 修改。
+ */
+@RestController
+@RequestMapping("/api/course-orders")
+public class CourseOrderController {
+
+    @Autowired
+    private ICourseOrderService courseOrderService;
+    @Autowired
+    private IStudentService studentService;
+    @Autowired
+    private ICourseTypeService courseTypeService;
+
+    /**
+     * 分页查询订单列表，支持按学员、销售、教练、状态筛选，自动按角色隔离门店数据。
+     */
+    @GetMapping
+    public R<Page<CourseOrder>> list(CourseOrder courseOrder,
+                                     @RequestParam(defaultValue = "1") Integer current,
+                                     @RequestParam(defaultValue = "10") Integer size,
+                                     @RequestParam(required = false) Long storeId,
+                                     HttpServletRequest request) {
+        String role = (String) request.getAttribute("role");
+        Long myStoreId = (Long) request.getAttribute("storeId");
+        Long filterStoreId = "boss".equals(role) ? storeId : myStoreId;
+
+        Page<CourseOrder> page = new Page<>(current, size);
+        LambdaQueryWrapper<CourseOrder> wrapper = new LambdaQueryWrapper<CourseOrder>()
+                .eq(filterStoreId != null, CourseOrder::getStoreId, filterStoreId)
+                .eq(courseOrder.getStudentId() != null, CourseOrder::getStudentId, courseOrder.getStudentId())
+                .eq(courseOrder.getSalesId() != null, CourseOrder::getSalesId, courseOrder.getSalesId())
+                .eq(courseOrder.getCoachId() != null, CourseOrder::getCoachId, courseOrder.getCoachId())
+                .eq(courseOrder.getStatus() != null, CourseOrder::getStatus, courseOrder.getStatus())
+                .orderByDesc(CourseOrder::getCreatedAt);
+        Page<CourseOrder> result = courseOrderService.page(page, wrapper);
+        result.getRecords().forEach(courseOrderService::fillNames);
+        return R.ok(result);
+    }
+
+    @GetMapping("/{id}")
+    public R<CourseOrder> getById(@PathVariable Long id) {
+        CourseOrder order = courseOrderService.getById(id);
+        return order != null ? R.ok(order) : R.fail("订单不存在");
+    }
+
+    /**
+     * 新增订单（学员购买课包），自动校验学员和课包存在，并从课包复制总课时。
+     */
+    @PostMapping
+    public R<?> save(@Valid @RequestBody CourseOrder courseOrder) {
+        // 校验学员存在
+        Student student = studentService.getById(courseOrder.getStudentId());
+        if (student == null) {
+            return R.fail("学员不存在，学员ID=" + courseOrder.getStudentId());
+        }
+        // 如果前端没传门店，从学员补填
+        if (courseOrder.getStoreId() == null) {
+            courseOrder.setStoreId(student.getStoreId());
+        }
+        // 校验课包存在，并自动填充课时
+        CourseType courseType = courseTypeService.getById(courseOrder.getCourseTypeId());
+        if (courseType == null) {
+            return R.fail("课包不存在，课包ID=" + courseOrder.getCourseTypeId());
+        }
+        // 如果前端没传课时，从课包复制
+        if (courseOrder.getTotalLessons() == null) {
+            courseOrder.setTotalLessons(courseType.getTotalLessons());
+        }
+        // 新订单：剩余课时=总课时，已消=0，状态=active
+        if (courseOrder.getRemainingLessons() == null) {
+            courseOrder.setRemainingLessons(courseOrder.getTotalLessons());
+        }
+        if (courseOrder.getConsumedLessons() == null) {
+            courseOrder.setConsumedLessons(0);
+        }
+        if (courseOrder.getStatus() == null) {
+            courseOrder.setStatus("active");
+        }
+        boolean ok = courseOrderService.save(courseOrder);
+        return ok ? R.ok() : R.fail("新增失败");
+    }
+
+    /**
+     * 更新订单信息。
+     * ⚠️ 安全限制：课时相关字段（remainingLessons / consumedLessons / version）不允许通过此接口直接修改，
+     * 课时变动必须走消课或退款接口。totalLessons 也不允许修改（修改课包应新开订单）。
+     */
+    @PutMapping
+    public R<?> update(@Valid @RequestBody CourseOrder courseOrder) {
+        if (courseOrder.getId() == null) {
+            return R.fail("订单ID不能为空");
+        }
+        // 先查出原订单，仅允许修改非敏感字段
+        CourseOrder existing = courseOrderService.getById(courseOrder.getId());
+        if (existing == null) {
+            return R.fail("订单不存在");
+        }
+        // 只更新业务层面允许修改的字段，课时和锁字段从 existing 保留
+        existing.setOrderNo(courseOrder.getOrderNo());
+        existing.setStoreId(courseOrder.getStoreId());
+        existing.setStudentId(courseOrder.getStudentId());
+        existing.setSalesId(courseOrder.getSalesId());
+        existing.setCoachId(courseOrder.getCoachId());
+        existing.setCourseTypeId(courseOrder.getCourseTypeId());
+        existing.setPaidAmount(courseOrder.getPaidAmount());
+        existing.setSource(courseOrder.getSource());
+        existing.setRemark(courseOrder.getRemark());
+        existing.setStatus(courseOrder.getStatus());
+        // remainingLessons / consumedLessons / totalLessons / version 保持不变，不能通过此接口篡改
+
+        boolean ok = courseOrderService.updateById(existing);
+        return ok ? R.ok() : R.fail("更新失败");
+    }
+
+    @DeleteMapping("/{id}")
+    public R<?> delete(@PathVariable Long id) {
+        boolean ok = courseOrderService.removeById(id);
+        return ok ? R.ok() : R.fail("删除失败");
+    }
+}
