@@ -112,7 +112,7 @@ public class CourseOrderController {
             order.setOrderNo(prefix + String.format("%04d", seq));
         }
 
-        // 2. 学员：按姓名查找，不存在则自动创建
+        // 2. 学员：按姓名查找（仅允许新学员，老学员请去学员列表续费）
         String studentName = (String) order.getParams().get("studentName");
         if (studentName == null || studentName.isBlank()) {
             return R.fail("请输入学员姓名");
@@ -121,13 +121,15 @@ public class CourseOrderController {
         Student student = studentMapper.selectOne(
                 new LambdaQueryWrapper<Student>().eq(Student::getName, studentName)
                         .eq(Student::getStoreId, storeId).last("LIMIT 1"));
-        if (student == null) {
-            student = new Student();
-            student.setName(studentName);
-            student.setStoreId(storeId);
-            student.setStatus(1);
-            studentService.save(student);
+        if (student != null) {
+            return R.fail("学员「" + studentName + "」已存在，请前往学员管理页面使用续费功能");
         }
+        // 新学员：自动创建
+        student = new Student();
+        student.setName(studentName);
+        student.setStoreId(storeId);
+        student.setStatus(1);
+        studentService.save(student);
         order.setStudentId(student.getId());
         order.setStoreId(storeId);
 
@@ -194,6 +196,60 @@ public class CourseOrderController {
 
         boolean ok = courseOrderService.updateById(existing);
         return ok ? R.ok() : R.fail("更新失败");
+    }
+
+    /**
+     * 续费：老学员已有 ID，直接从学员列表发起，不再做姓名查重。
+     */
+    @PostMapping("/renew")
+    public R<?> renew(HttpServletRequest request, @RequestBody CourseOrder order) {
+        Long myStoreId = (Long) request.getAttribute("storeId");
+
+        if (order.getStudentId() == null) {
+            return R.fail("学员ID不能为空");
+        }
+        Student student = studentService.getById(order.getStudentId());
+        if (student == null) {
+            return R.fail("学员不存在");
+        }
+
+        // 自动生成订单号
+        String prefix = "ORD" + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+        List<CourseOrder> todays = courseOrderMapper.selectList(
+                new LambdaQueryWrapper<CourseOrder>().likeRight(CourseOrder::getOrderNo, prefix)
+                        .orderByDesc(CourseOrder::getOrderNo).last("LIMIT 1"));
+        int seq = 1;
+        if (!todays.isEmpty()) {
+            try { seq = Integer.parseInt(todays.get(0).getOrderNo().substring(todays.get(0).getOrderNo().length() - 4)) + 1; } catch (Exception ignored) {}
+        }
+        order.setOrderNo(prefix + String.format("%04d", seq));
+
+        order.setStoreId(order.getStoreId() != null ? order.getStoreId() : (myStoreId != null ? myStoreId : student.getStoreId()));
+
+        if (order.getCourseTypeId() == null) return R.fail("请选择课包");
+        CourseType courseType = courseTypeService.getById(order.getCourseTypeId());
+        if (courseType == null) return R.fail("课包不存在");
+
+        if (order.getTotalLessons() == null || order.getTotalLessons() <= 0) {
+            order.setTotalLessons(courseType.getTotalLessons());
+        }
+        order.setRemainingLessons(order.getTotalLessons());
+        order.setConsumedLessons(0);
+        order.setVersion(0);
+        order.setStatus("active");
+
+        // 销售按姓名匹配
+        String salesName = (String) order.getParams().get("salesName");
+        if (salesName != null && !salesName.isBlank()) {
+            com.pingpong.entity.Staff sales = staffMapper.selectOne(
+                    new LambdaQueryWrapper<com.pingpong.entity.Staff>()
+                            .eq(com.pingpong.entity.Staff::getName, salesName)
+                            .eq(com.pingpong.entity.Staff::getRole, "sales").last("LIMIT 1"));
+            if (sales != null) order.setSalesId(sales.getId());
+        }
+
+        boolean ok = courseOrderService.save(order);
+        return ok ? R.ok() : R.fail("续费失败");
     }
 
     @DeleteMapping("/{id}")
