@@ -82,16 +82,17 @@ public class DashboardServiceImpl implements IDashboardService {
 
     @Override
     public List<Map<String, Object>> storePerformance(Long storeId) {
-        LocalDateTime monthStart = LocalDateTime.now()
-                .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime monthStart = now.with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = now.with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
 
         List<Store> stores = storeId == null
                 ? storeMapper.selectList(null)
                 : storeMapper.selectList(new LambdaQueryWrapper<Store>().eq(Store::getId, storeId));
 
         // 聚合SQL
-        List<Map<String, Object>> salesRows = orderMapper.sumByStore(monthStart, null, storeId);
-        List<Map<String, Object>> consumptionRows = consumptionMapper.sumByStore(monthStart, null, storeId);
+        List<Map<String, Object>> salesRows = orderMapper.sumByStore(monthStart, monthEnd, storeId);
+        List<Map<String, Object>> consumptionRows = consumptionMapper.sumByStore(monthStart, monthEnd, storeId);
 
         Map<Long, BigDecimal> salesMap = new HashMap<>();
         Map<Long, Long> orderCountMap = new HashMap<>();
@@ -133,7 +134,7 @@ public class DashboardServiceImpl implements IDashboardService {
 
         // 查询教练
         LambdaQueryWrapper<Staff> staffQw = new LambdaQueryWrapper<Staff>()
-                .eq(Staff::getRole, "coach")
+                .in(Staff::getRole, "coach", "shop_owner")
                 .eq(Staff::getStatus, 1);
         if (storeId != null) staffQw.eq(Staff::getStoreId, storeId);
         List<Staff> coaches = staffMapper.selectList(staffQw);
@@ -218,7 +219,7 @@ public class DashboardServiceImpl implements IDashboardService {
                 .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
 
         LambdaQueryWrapper<Staff> staffQw = new LambdaQueryWrapper<Staff>()
-                .eq(Staff::getRole, "coach")
+                .in(Staff::getRole, "coach", "shop_owner")
                 .eq(Staff::getStatus, 1);
         if (storeId != null) staffQw.eq(Staff::getStoreId, storeId);
         List<Staff> coaches = staffMapper.selectList(staffQw);
@@ -321,7 +322,7 @@ public class DashboardServiceImpl implements IDashboardService {
 
         if (!"sales".equals(type)) {
             LambdaQueryWrapper<Staff> coachQw = new LambdaQueryWrapper<Staff>()
-                    .eq(Staff::getRole, "coach")
+                    .in(Staff::getRole, "coach", "shop_owner")
                     .eq(Staff::getStatus, 1);
             if (storeId != null) coachQw.eq(Staff::getStoreId, storeId);
             List<Staff> coaches = staffMapper.selectList(coachQw);

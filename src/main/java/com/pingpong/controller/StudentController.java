@@ -4,11 +4,15 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.pingpong.common.R;
 import com.pingpong.entity.Student;
+import com.pingpong.mapper.CourseOrderMapper;
 import com.pingpong.service.IStudentService;
+import com.pingpong.vo.StudentOrderVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * 学员控制器
@@ -22,6 +26,10 @@ public class StudentController {
     /** 学员 Service */
     @Autowired
     private IStudentService studentService;
+
+    /** 订单 Mapper（用于查学员课包列表） */
+    @Autowired
+    private CourseOrderMapper courseOrderMapper;
 
     /**
      * 分页查询学员列表
@@ -41,6 +49,7 @@ public class StudentController {
                                  @RequestParam(defaultValue = "1") Integer current,
                                  @RequestParam(defaultValue = "10") Integer size,
                                  @RequestParam(required = false) Long storeId,
+                                 @RequestParam(required = false) String keyword,
                                  HttpServletRequest request) {
         // 从请求上下文中获取当前登录用户的角色和门店
         String role = (String) request.getAttribute("role");
@@ -50,6 +59,10 @@ public class StudentController {
 
         LambdaQueryWrapper<Student> wrapper = new LambdaQueryWrapper<Student>()
                 .eq(filterStoreId != null, Student::getStoreId, filterStoreId)
+                .and(keyword != null && !keyword.isBlank(), w -> w
+                        .like(Student::getName, keyword)
+                        .or()
+                        .like(Student::getPhone, keyword))
                 .orderByDesc(Student::getId);
         Page<Student> page = new Page<>(current, size);
         return R.ok(studentService.page(page, wrapper));
@@ -103,8 +116,59 @@ public class StudentController {
         existing.setSource(student.getSource());
         existing.setStatus(student.getStatus());
         existing.setStoreId(student.getStoreId());
+        existing.setPrimaryCoachId(student.getPrimaryCoachId());
         boolean ok = studentService.updateById(existing);
         return ok ? R.ok() : R.fail("更新失败");
+    }
+
+    /**
+     * 查询学员名下的课包列表
+     *
+     * @param id 学员ID
+     * @return 课包列表（含课包名、总课时、剩余课时、金额）
+     */
+    @GetMapping("/{id}/orders")
+    public R<List<StudentOrderVO>> getStudentOrders(@PathVariable Long id) {
+        Student student = studentService.getById(id);
+        if (student == null) {
+            return R.fail("学员不存在");
+        }
+        List<StudentOrderVO> orders = courseOrderMapper.getStudentOrders(id);
+        return R.ok(orders);
+    }
+
+    /**
+     * 切换学员停课/复课状态
+     * 老板和店长可操作。
+     *
+     * @param id     学员ID
+     * @param status 新状态：1在读 0停课
+     * @return 操作结果
+     */
+    @PutMapping("/{id}/status")
+    public R<?> toggleStatus(@PathVariable Long id, @RequestParam Integer status,
+                             HttpServletRequest request) {
+        String role = (String) request.getAttribute("role");
+        if (!"boss".equals(role) && !"shop_owner".equals(role)) {
+            return R.fail("无权限");
+        }
+        Student student = studentService.getById(id);
+        if (student == null) {
+            return R.fail("学员不存在");
+        }
+        // 店长只能操作自己门店的学员
+        if ("shop_owner".equals(role)) {
+            Long myStoreId = (Long) request.getAttribute("storeId");
+            if (!myStoreId.equals(student.getStoreId())) {
+                return R.fail("无权限，该学员不在您的门店");
+            }
+        }
+        if (status != 0 && status != 1) {
+            return R.fail("状态值无效，只能传 0（停课）或 1（在读）");
+        }
+        student.setStatus(status);
+        boolean ok = studentService.updateById(student);
+        return ok ? R.ok() : R.fail("操作失败");
     }
 
     /**

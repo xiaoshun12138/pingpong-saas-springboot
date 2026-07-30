@@ -8,7 +8,7 @@ import com.pingpong.entity.RefundLog;
  * 继承 MyBatis-Plus 的 IService，提供基础 CRUD + 批量操作能力。
  * 核心业务方法 refund 以事务方式完成退款全流程。
  */
-public interface IRefundLogService extends IService<RefundLog> {
+public interface  IRefundLogService extends IService<RefundLog> {
 
     /**
      * 执行退款操作（事务保证原子性）

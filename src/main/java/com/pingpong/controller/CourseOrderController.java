@@ -6,6 +6,7 @@ import com.pingpong.common.R;
 import com.pingpong.entity.CourseOrder;
 import com.pingpong.entity.CourseType;
 import com.pingpong.entity.Student;
+import com.pingpong.mapper.StudentMapper;
 import com.pingpong.service.ICourseOrderService;
 import com.pingpong.service.ICourseTypeService;
 import com.pingpong.service.IStudentService;
@@ -13,6 +14,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 课包订单控制器
@@ -30,6 +34,8 @@ public class CourseOrderController {
     private IStudentService studentService;
     @Autowired
     private ICourseTypeService courseTypeService;
+    @Autowired
+    private StudentMapper studentMapper;
 
     /**
      * 分页查询订单列表，支持按学员、销售、教练、状态筛选，自动按角色隔离门店数据。
@@ -39,6 +45,7 @@ public class CourseOrderController {
                                      @RequestParam(defaultValue = "1") Integer current,
                                      @RequestParam(defaultValue = "10") Integer size,
                                      @RequestParam(required = false) Long storeId,
+                                     @RequestParam(required = false) String keyword,
                                      HttpServletRequest request) {
         String role = (String) request.getAttribute("role");
         Long myStoreId = (Long) request.getAttribute("storeId");
@@ -51,6 +58,18 @@ public class CourseOrderController {
                 .eq(courseOrder.getSalesId() != null, CourseOrder::getSalesId, courseOrder.getSalesId())
                 .eq(courseOrder.getCoachId() != null, CourseOrder::getCoachId, courseOrder.getCoachId())
                 .eq(courseOrder.getStatus() != null, CourseOrder::getStatus, courseOrder.getStatus())
+                .and(keyword != null && !keyword.isBlank(), w -> {
+                    List<Long> studentIds = studentMapper.selectList(
+                            new LambdaQueryWrapper<Student>()
+                                    .select(Student::getId)
+                                    .like(Student::getName, keyword))
+                            .stream().map(Student::getId).collect(Collectors.toList());
+                    if (!studentIds.isEmpty()) {
+                        w.in(CourseOrder::getStudentId, studentIds);
+                    } else {
+                        w.eq(CourseOrder::getStudentId, -1L); // 搜不到任何学员，返回空
+                    }
+                })
                 .orderByDesc(CourseOrder::getCreatedAt);
         Page<CourseOrder> result = courseOrderService.page(page, wrapper);
         result.getRecords().forEach(courseOrderService::fillNames);

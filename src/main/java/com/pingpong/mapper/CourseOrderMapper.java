@@ -75,4 +75,24 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
     BigDecimal sumAmountInRange(@Param("start") LocalDateTime start,
                                  @Param("end") LocalDateTime end,
                                  @Param("storeId") Long storeId);
+
+    /**
+     * 查询学员名下所有课包（JOIN course_type 获取课包名称）
+     */
+    @Select("SELECT " +
+            "  o.id AS orderId, " +
+            "  COALESCE(ct.name, '未知课包') AS courseTypeName, " +
+            "  COALESCE(sf.name, '-') AS coachName, " +
+            "  o.total_lessons AS totalLessons, " +
+            "  o.remaining_lessons AS remainingLessons, " +
+            "  o.consumed_lessons AS consumedLessons, " +
+            "  o.paid_amount AS paidAmount, " +
+            "  o.status " +
+            "FROM course_order o " +
+            "LEFT JOIN course_type ct ON o.course_type_id = ct.id " +
+            "LEFT JOIN staff sf ON o.coach_id = sf.id " +
+            "WHERE o.student_id = #{studentId} " +
+            "  AND o.deleted = 0 " +
+            "ORDER BY o.created_at DESC")
+    List<com.pingpong.vo.StudentOrderVO> getStudentOrders(@Param("studentId") Long studentId);
 }

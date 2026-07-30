@@ -26,6 +26,9 @@ public class Student implements Serializable {
     @NotNull(message = "所属门店不能为空")
     private Long storeId;
 
+    /** 带教教练ID（主要负责人/班主任） */
+    private Long primaryCoachId;
+
     /** 学员姓名 */
     @NotBlank(message = "姓名不能为空")
     private String name;

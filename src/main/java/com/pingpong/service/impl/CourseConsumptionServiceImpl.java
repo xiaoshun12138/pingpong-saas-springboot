@@ -78,8 +78,8 @@ public class CourseConsumptionServiceImpl extends ServiceImpl<CourseConsumptionM
         if (coach == null) {
             throw new RuntimeException("教练不存在，教练ID=" + consumption.getCoachId());
         }
-        if (!"coach".equals(coach.getRole())) {
-            throw new RuntimeException("该员工不是教练，角色=" + coach.getRole());
+        if (!"coach".equals(coach.getRole()) && !"shop_owner".equals(coach.getRole())) {
+            throw new RuntimeException("该员工不是教练或店长，角色=" + coach.getRole());
         }
         if (!order.getStoreId().equals(coach.getStoreId())) {
             throw new RuntimeException("教练不属于目标门店，订单门店=" + order.getStoreId() + "，教练门店=" + coach.getStoreId());
