@@ -8,6 +8,8 @@ import lombok.Data;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 课包订单实体类
@@ -23,8 +25,7 @@ public class CourseOrder implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    /** 订单编号（业务唯一标识） */
-    @NotBlank(message = "订单编号不能为空")
+    /** 订单编号（业务唯一标识，新增时留空则自动生成） */
     private String orderNo;
 
     /** 所属门店ID */
@@ -93,4 +94,7 @@ public class CourseOrder implements Serializable {
     /** 门店名称（非数据库字段，查询时填充） */
     @TableField(exist = false)
     private String storeName;
+    /** 扩展参数（前端传 studentName / salesName，不落库） */
+    @TableField(exist = false)
+    private Map<String, Object> params = new HashMap<>();
 }

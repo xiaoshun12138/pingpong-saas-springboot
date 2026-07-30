@@ -82,40 +82,85 @@ public class CourseOrderController {
         return order != null ? R.ok(order) : R.fail("订单不存在");
     }
 
+    // 注入订单 Mapper，用于自动生成订单号
+    @Autowired
+    private com.pingpong.mapper.CourseOrderMapper courseOrderMapper;
+    @Autowired
+    private com.pingpong.mapper.StaffMapper staffMapper;
+
     /**
-     * 新增订单（学员购买课包），自动校验学员和课包存在，并从课包复制总课时。
+     * 新增订单。订单编号自动生成；学员按姓名查找（不存在则自动创建）；
+     * 销售按姓名查找；课时从课包复制但允许覆盖（送课场景）。
      */
     @PostMapping
-    public R<?> save(@Valid @RequestBody CourseOrder courseOrder) {
-        // 校验学员存在
-        Student student = studentService.getById(courseOrder.getStudentId());
+    public R<?> save(HttpServletRequest request, @RequestBody CourseOrder order) {
+        Long myStoreId = (Long) request.getAttribute("storeId");
+        String myRole = (String) request.getAttribute("role");
+
+        // 1. 自动生成订单号
+        if (order.getOrderNo() == null || order.getOrderNo().isBlank()) {
+            String prefix = "ORD" + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+            // 查今天最大的序号
+            List<CourseOrder> todays = courseOrderMapper.selectList(
+                    new LambdaQueryWrapper<CourseOrder>().likeRight(CourseOrder::getOrderNo, prefix)
+                            .orderByDesc(CourseOrder::getOrderNo).last("LIMIT 1"));
+            int seq = 1;
+            if (!todays.isEmpty()) {
+                String last = todays.get(0).getOrderNo();
+                try { seq = Integer.parseInt(last.substring(last.length() - 4)) + 1; } catch (Exception ignored) {}
+            }
+            order.setOrderNo(prefix + String.format("%04d", seq));
+        }
+
+        // 2. 学员：按姓名查找，不存在则自动创建
+        String studentName = (String) order.getParams().get("studentName");
+        if (studentName == null || studentName.isBlank()) {
+            return R.fail("请输入学员姓名");
+        }
+        Long storeId = order.getStoreId() != null ? order.getStoreId() : myStoreId;
+        Student student = studentMapper.selectOne(
+                new LambdaQueryWrapper<Student>().eq(Student::getName, studentName)
+                        .eq(Student::getStoreId, storeId).last("LIMIT 1"));
         if (student == null) {
-            return R.fail("学员不存在，学员ID=" + courseOrder.getStudentId());
+            student = new Student();
+            student.setName(studentName);
+            student.setStoreId(storeId);
+            student.setStatus(1);
+            studentService.save(student);
         }
-        // 如果前端没传门店，从学员补填
-        if (courseOrder.getStoreId() == null) {
-            courseOrder.setStoreId(student.getStoreId());
+        order.setStudentId(student.getId());
+        order.setStoreId(storeId);
+
+        // 3. 销售：按姓名查找
+        String salesName = (String) order.getParams().get("salesName");
+        if (salesName != null && !salesName.isBlank()) {
+            com.pingpong.entity.Staff sales = staffMapper.selectOne(
+                    new LambdaQueryWrapper<com.pingpong.entity.Staff>()
+                            .eq(com.pingpong.entity.Staff::getName, salesName)
+                            .eq(com.pingpong.entity.Staff::getRole, "sales").last("LIMIT 1"));
+            if (sales != null) order.setSalesId(sales.getId());
         }
-        // 校验课包存在，并自动填充课时
-        CourseType courseType = courseTypeService.getById(courseOrder.getCourseTypeId());
+
+        // 4. 课包 + 课时
+        if (order.getCourseTypeId() == null) {
+            return R.fail("请选择课包");
+        }
+        CourseType courseType = courseTypeService.getById(order.getCourseTypeId());
         if (courseType == null) {
-            return R.fail("课包不存在，课包ID=" + courseOrder.getCourseTypeId());
+            return R.fail("课包不存在");
         }
-        // 如果前端没传课时，从课包复制
-        if (courseOrder.getTotalLessons() == null) {
-            courseOrder.setTotalLessons(courseType.getTotalLessons());
+        // 以实际填写课时为准，未填则取课包默认值
+        if (order.getTotalLessons() == null || order.getTotalLessons() <= 0) {
+            order.setTotalLessons(courseType.getTotalLessons());
         }
-        // 新订单：剩余课时=总课时，已消=0，状态=active
-        if (courseOrder.getRemainingLessons() == null) {
-            courseOrder.setRemainingLessons(courseOrder.getTotalLessons());
-        }
-        if (courseOrder.getConsumedLessons() == null) {
-            courseOrder.setConsumedLessons(0);
-        }
-        if (courseOrder.getStatus() == null) {
-            courseOrder.setStatus("active");
-        }
-        boolean ok = courseOrderService.save(courseOrder);
+
+        // 5. 默认值
+        order.setRemainingLessons(order.getTotalLessons());
+        order.setConsumedLessons(0);
+        order.setVersion(0);
+        order.setStatus("active");
+
+        boolean ok = courseOrderService.save(order);
         return ok ? R.ok() : R.fail("新增失败");
     }
 
