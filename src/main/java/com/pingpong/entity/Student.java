@@ -45,6 +45,12 @@ public class Student implements Serializable {
     /** 获客来源（如：转介绍、地推、抖音等） */
     private String source;
 
+    /** 注册日期（首次订单创建时间） */
+    private LocalDateTime registeredAt;
+
+    /** 最近上课日期（最近一次消课时间） */
+    private LocalDateTime lastLessonAt;
+
     /** 总剩余课时（所有有效订单剩余课时之和），消课/退款时与订单课时同步扣减 */
     private Integer totalRemainingLessons;
 

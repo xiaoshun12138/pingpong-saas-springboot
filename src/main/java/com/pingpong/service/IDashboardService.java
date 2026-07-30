@@ -30,6 +30,14 @@ public interface IDashboardService {
     List<Map<String, Object>> storePerformance(Long storeId);
 
     /**
+     * 本月每日业绩走势（按天聚合订单金额）
+     *
+     * @param storeId 门店ID，为 null 时查询全部门店
+     * @return [{d: 1, amount: 12345.00}, ...]
+     */
+    List<Map<String, Object>> dailyTrend(Long storeId);
+
+    /**
      * 教练消课排名（按本月消课总课时降序）
      *
      * @param storeId 门店ID，为 null 时查询全部门店

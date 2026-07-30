@@ -75,7 +75,10 @@ public class RefundLogController {
     }
 
     @PostMapping
-    public R<?> save(@Valid @RequestBody RefundLog refundLog) {
+    public R<?> save(@Valid @RequestBody RefundLog refundLog, HttpServletRequest request) {
+        // 操作人从 JWT token 取，不信任前端传入
+        Long operatorId = (Long) request.getAttribute("staffId");
+        refundLog.setOperatorId(operatorId);
         refundLogService.refund(refundLog);
         return R.ok("退款成功");
     }

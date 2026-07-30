@@ -28,6 +28,9 @@ public class CourseOrder implements Serializable {
     /** 订单编号（业务唯一标识，新增时留空则自动生成） */
     private String orderNo;
 
+    /** 类型：new-新报 renew-续费 */
+    private String type;
+
     /** 所属门店ID */
     @NotNull(message = "所属门店不能为空")
     private Long storeId;

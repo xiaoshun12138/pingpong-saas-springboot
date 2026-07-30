@@ -45,8 +45,7 @@ public class RefundLog implements Serializable {
     /** 退款原因 */
     private String reason;
 
-    /** 操作人ID（谁执行的退款） */
-    @NotNull(message = "操作人不能为空")
+    /** 操作人ID（谁执行的退款，后端从JWT token自动填充） */
     private Long operatorId;
 
     /** 创建时间（退款时间） */

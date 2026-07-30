@@ -12,6 +12,7 @@ import com.pingpong.service.ICourseTypeService;
 import com.pingpong.service.IStudentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.time.LocalDateTime;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -85,8 +86,6 @@ public class CourseOrderController {
     // 注入订单 Mapper，用于自动生成订单号
     @Autowired
     private com.pingpong.mapper.CourseOrderMapper courseOrderMapper;
-    @Autowired
-    private com.pingpong.mapper.StaffMapper staffMapper;
 
     /**
      * 新增订单。订单编号自动生成；学员按姓名查找（不存在则自动创建）；
@@ -128,21 +127,16 @@ public class CourseOrderController {
         student = new Student();
         student.setName(studentName);
         student.setStoreId(storeId);
-        student.setPhone("");
+        student.setPhone(null);
+        student.setPrimaryCoachId(order.getCoachId());
         student.setStatus(1);
+        student.setRegisteredAt(LocalDateTime.now());
         studentService.save(student);
         order.setStudentId(student.getId());
         order.setStoreId(storeId);
 
-        // 3. 销售：按姓名查找
-        String salesName = (String) order.getParams().get("salesName");
-        if (salesName != null && !salesName.isBlank()) {
-            com.pingpong.entity.Staff sales = staffMapper.selectOne(
-                    new LambdaQueryWrapper<com.pingpong.entity.Staff>()
-                            .eq(com.pingpong.entity.Staff::getName, salesName)
-                            .eq(com.pingpong.entity.Staff::getRole, "sales").last("LIMIT 1"));
-            if (sales != null) order.setSalesId(sales.getId());
-        }
+        // 3. 主管教练和销售由前端下拉框传入，直接使用 order.coachId / order.salesId
+        // 新建学员自动绑定主管教练
 
         // 4. 课包 + 课时
         if (order.getCourseTypeId() == null) {
@@ -162,6 +156,7 @@ public class CourseOrderController {
         order.setConsumedLessons(0);
         order.setVersion(0);
         order.setStatus("active");
+        order.setType("new");
 
         boolean ok = courseOrderService.save(order);
         if (!ok) return R.fail("新增失败");
@@ -247,16 +242,7 @@ public class CourseOrderController {
         order.setConsumedLessons(0);
         order.setVersion(0);
         order.setStatus("active");
-
-        // 销售按姓名匹配
-        String salesName = (String) order.getParams().get("salesName");
-        if (salesName != null && !salesName.isBlank()) {
-            com.pingpong.entity.Staff sales = staffMapper.selectOne(
-                    new LambdaQueryWrapper<com.pingpong.entity.Staff>()
-                            .eq(com.pingpong.entity.Staff::getName, salesName)
-                            .eq(com.pingpong.entity.Staff::getRole, "sales").last("LIMIT 1"));
-            if (sales != null) order.setSalesId(sales.getId());
-        }
+        order.setType("renew");
 
         boolean ok = courseOrderService.save(order);
         if (!ok) return R.fail("续费失败");

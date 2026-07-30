@@ -58,6 +58,17 @@ public class DashboardController {
     }
 
     /**
+     * 本月每日业绩走势（按天聚合订单金额）
+     */
+    @GetMapping("/daily-trend")
+    public R<List<Map<String, Object>>> dailyTrend(HttpServletRequest request) {
+        String role = (String) request.getAttribute("role");
+        Long storeId = (Long) request.getAttribute("storeId");
+        Long filterStoreId = "boss".equals(role) ? null : storeId;
+        return R.ok(dashboardService.dailyTrend(filterStoreId));
+    }
+
+    /**
      * 教练消课排名（本月，按消课总课时降序）
      *
      * @param storeId 门店筛选（仅 boss 可自由指定，店长强制自己门店）

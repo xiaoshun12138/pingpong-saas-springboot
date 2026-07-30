@@ -57,6 +57,19 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
                                           @Param("storeId") Long storeId);
 
     /**
+     * 按天聚合本月订单金额（每日走势图）
+     * @return [{d: 1, total: 12345.00}, {d: 2, total: 0.00}, ...]
+     */
+    @Select("SELECT DAY(created_at) AS d, COALESCE(SUM(paid_amount), 0) AS total " +
+            "FROM course_order WHERE 1=1 " +
+            "AND created_at >= #{start} AND created_at <= #{end} " +
+            "AND (#{storeId} IS NULL OR store_id = #{storeId}) " +
+            "GROUP BY DAY(created_at) ORDER BY d")
+    List<Map<String, Object>> sumByDay(@Param("start") LocalDateTime start,
+                                        @Param("end") LocalDateTime end,
+                                        @Param("storeId") Long storeId);
+
+    /**
      * 带时间范围的 COUNT
      */
     @Select("SELECT COUNT(*) FROM course_order WHERE 1=1 " +
@@ -77,10 +90,35 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
                                  @Param("storeId") Long storeId);
 
     /**
+     * 按订单类型统计笔数（new=新报 / renew=续费）
+     */
+    @Select("SELECT COUNT(*) FROM course_order WHERE 1=1 " +
+            "AND created_at >= #{start} AND created_at <= #{end} " +
+            "AND type = #{type} " +
+            "AND (#{storeId} IS NULL OR store_id = #{storeId})")
+    Long countByType(@Param("start") LocalDateTime start,
+                     @Param("end") LocalDateTime end,
+                     @Param("storeId") Long storeId,
+                     @Param("type") String type);
+
+    /**
+     * 按订单类型统计金额（new=新报 / renew=续费）
+     */
+    @Select("SELECT COALESCE(SUM(paid_amount), 0) FROM course_order WHERE 1=1 " +
+            "AND created_at >= #{start} AND created_at <= #{end} " +
+            "AND type = #{type} " +
+            "AND (#{storeId} IS NULL OR store_id = #{storeId})")
+    BigDecimal sumAmountByType(@Param("start") LocalDateTime start,
+                                @Param("end") LocalDateTime end,
+                                @Param("storeId") Long storeId,
+                                @Param("type") String type);
+
+    /**
      * 查询学员名下所有课包（JOIN course_type 获取课包名称）
      */
     @Select("SELECT " +
             "  o.id AS orderId, " +
+            "  o.order_no AS orderNo, " +
             "  COALESCE(ct.name, '未知课包') AS courseTypeName, " +
             "  COALESCE(sf.name, '-') AS coachName, " +
             "  o.total_lessons AS totalLessons, " +

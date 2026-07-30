@@ -14,6 +14,9 @@ public class StudentOrderVO implements Serializable {
     /** 订单ID */
     private Long orderId;
 
+    /** 订单编号 */
+    private String orderNo;
+
     /** 课包类型名称 */
     private String courseTypeName;
 

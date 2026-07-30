@@ -15,6 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 /**
  * 消课记录 Service 实现类
  * 核心业务方法 consumeLesson 以事务方式完成消课全流程，
@@ -85,10 +87,14 @@ public class CourseConsumptionServiceImpl extends ServiceImpl<CourseConsumptionM
             throw new RuntimeException("教练不属于目标门店，订单门店=" + order.getStoreId() + "，教练门店=" + coach.getStoreId());
         }
 
-        // ========== 5. 查询学员并校验总剩余课时 ==========
+        // ========== 5. 查询学员并校验状态与总剩余课时 ==========
         Student student = studentService.getById(consumption.getStudentId());
         if (student == null) {
             throw new RuntimeException("学员不存在");
+        }
+        // 停课学员不允许消课
+        if (student.getStatus() == null || student.getStatus() == 0) {
+            throw new RuntimeException("学员已停课，无法消课。请先在学员管理中恢复在读状态");
         }
         if (student.getTotalRemainingLessons() < consumption.getLessons()) {
             throw new RuntimeException("学员总剩余课时不足，当前剩余：" + student.getTotalRemainingLessons() + "，需要消课：" + consumption.getLessons());
@@ -123,6 +129,7 @@ public class CourseConsumptionServiceImpl extends ServiceImpl<CourseConsumptionM
         updateStudent.setId(student.getId());
         updateStudent.setTotalRemainingLessons(student.getTotalRemainingLessons() - consumption.getLessons());
         updateStudent.setVersion(student.getVersion());
+        updateStudent.setLastLessonAt(LocalDateTime.now());
 
         boolean studentUpdateOk = studentService.updateById(updateStudent);
         if (!studentUpdateOk) {

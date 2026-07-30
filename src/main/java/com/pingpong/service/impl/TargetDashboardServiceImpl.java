@@ -36,32 +36,35 @@ public class TargetDashboardServiceImpl implements ITargetDashboardService {
     private StoreMapper storeMapper;
 
     @Override
-    public TargetDashboardVO salesTargetDashboard(Integer year, Long storeId) {
+    public TargetDashboardVO salesTargetDashboard(Integer year, Integer month, Long storeId) {
         LocalDateTime yearStart = LocalDateTime.of(year, 1, 1, 0, 0, 0);
         LocalDateTime yearEnd = LocalDateTime.of(year, 12, 31, 23, 59, 59);
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime monthStart = now.with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
-        LocalDateTime weekStart = now.with(java.time.DayOfWeek.MONDAY).withHour(0).withMinute(0).withSecond(0);
+        // 根据 year+month 计算目标月份
+        LocalDate targetMonth = LocalDate.of(year, month, 1);
+        LocalDateTime monthStart = targetMonth.atTime(0, 0, 0);
+        LocalDateTime monthEnd = targetMonth.with(TemporalAdjusters.lastDayOfMonth()).atTime(23, 59, 59);
+        // 周目标取目标月内第一个周一所在周，但当前数据才有意义，这里用当前时间
+        LocalDate today = LocalDate.now();
+        LocalDateTime weekStart = today.with(java.time.DayOfWeek.MONDAY).atTime(0, 0, 0);
+        LocalDateTime now2 = LocalDateTime.now();
 
         // ===== 目标数据（目标表数据量小，直接查） =====
         BigDecimal yearTarget = sumMonthlyTarget("sales", LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 1), storeId);
-        BigDecimal monthTarget = sumMonthlyTargetByMonth("sales", now.with(TemporalAdjusters.firstDayOfMonth()).toLocalDate(), storeId);
-        BigDecimal weekTarget = sumWeeklyTargetByWeek("sales", now.with(java.time.DayOfWeek.MONDAY).toLocalDate(), storeId);
+        BigDecimal monthTarget = sumMonthlyTargetByMonth("sales", targetMonth, storeId);
+        BigDecimal weekTarget = sumWeeklyTargetByWeek("sales", today.with(java.time.DayOfWeek.MONDAY), storeId);
 
         // ===== 实际数据（用聚合SQL，一条替代N条） =====
-        LocalDateTime now2 = LocalDateTime.now();
         BigDecimal yearActual = orderMapper.sumAmountInRange(yearStart, yearEnd, storeId);
-        BigDecimal monthActual = orderMapper.sumAmountInRange(monthStart, now2, storeId);
+        BigDecimal monthActual = orderMapper.sumAmountInRange(monthStart, monthEnd, storeId);
         BigDecimal weekActual = orderMapper.sumAmountInRange(weekStart, now2, storeId);
 
         // ===== 各月走势（GROUP BY 一次查出12个月） =====
         List<Map<String, Object>> monthRows = orderMapper.sumByMonth(yearStart, yearEnd, storeId);
         List<BigDecimal> monthlyTrend = buildMonthlyArray(monthRows, "total");
 
-        // ===== 各门店对比（本月） =====
-        List<Map<String, Object>> storeActuals = orderMapper.sumByStore(monthStart, now2, storeId);
-        List<Map<String, Object>> storeMonthlyTargets = sumMonthlyTargetByStore("sales",
-                now.with(TemporalAdjusters.firstDayOfMonth()).toLocalDate(), storeId);
+        // ===== 各门店对比（目标月） =====
+        List<Map<String, Object>> storeActuals = orderMapper.sumByStore(monthStart, monthEnd, storeId);
+        List<Map<String, Object>> storeMonthlyTargets = sumMonthlyTargetByStore("sales", targetMonth, storeId);
 
         List<Store> stores = getStores(storeId);
         List<TargetDashboardVO.StoreComparisonItem> storeComparison = new ArrayList<>();
@@ -80,32 +83,33 @@ public class TargetDashboardServiceImpl implements ITargetDashboardService {
     }
 
     @Override
-    public TargetDashboardVO consumptionTargetDashboard(Integer year, Long storeId) {
+    public TargetDashboardVO consumptionTargetDashboard(Integer year, Integer month, Long storeId) {
         LocalDateTime yearStart = LocalDateTime.of(year, 1, 1, 0, 0, 0);
         LocalDateTime yearEnd = LocalDateTime.of(year, 12, 31, 23, 59, 59);
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime monthStart = now.with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
-        LocalDateTime weekStart = now.with(java.time.DayOfWeek.MONDAY).withHour(0).withMinute(0).withSecond(0);
+        LocalDate targetMonth = LocalDate.of(year, month, 1);
+        LocalDateTime monthStart = targetMonth.atTime(0, 0, 0);
+        LocalDateTime monthEnd = targetMonth.with(TemporalAdjusters.lastDayOfMonth()).atTime(23, 59, 59);
+        LocalDate today = LocalDate.now();
+        LocalDateTime weekStart = today.with(java.time.DayOfWeek.MONDAY).atTime(0, 0, 0);
         LocalDateTime now2 = LocalDateTime.now();
 
         // ===== 目标数据（金额） =====
         BigDecimal yearTarget = sumMonthlyTarget("consumption", LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 1), storeId);
-        BigDecimal monthTarget = sumMonthlyTargetByMonth("consumption", now.with(TemporalAdjusters.firstDayOfMonth()).toLocalDate(), storeId);
-        BigDecimal weekTarget = sumWeeklyTargetByWeek("consumption", now.with(java.time.DayOfWeek.MONDAY).toLocalDate(), storeId);
+        BigDecimal monthTarget = sumMonthlyTargetByMonth("consumption", targetMonth, storeId);
+        BigDecimal weekTarget = sumWeeklyTargetByWeek("consumption", today.with(java.time.DayOfWeek.MONDAY), storeId);
 
         // ===== 实际消课金额（JOIN order 按单价折算） =====
         BigDecimal yearActual = consumptionMapper.sumAmountInRange(yearStart, yearEnd, storeId);
-        BigDecimal monthActual = consumptionMapper.sumAmountInRange(monthStart, now2, storeId);
+        BigDecimal monthActual = consumptionMapper.sumAmountInRange(monthStart, monthEnd, storeId);
         BigDecimal weekActual = consumptionMapper.sumAmountInRange(weekStart, now2, storeId);
 
         // ===== 各月走势（金额） =====
         List<Map<String, Object>> monthRows = consumptionMapper.sumAmountByMonth(yearStart, yearEnd, storeId);
         List<BigDecimal> monthlyTrend = buildMonthlyArray(monthRows, "amount");
 
-        // ===== 各门店对比（本月金额） =====
-        List<Map<String, Object>> storeActuals = consumptionMapper.sumAmountByStore(monthStart, now2, storeId);
-        List<Map<String, Object>> storeMonthlyTargets = sumMonthlyTargetByStore("consumption",
-                now.with(TemporalAdjusters.firstDayOfMonth()).toLocalDate(), storeId);
+        // ===== 各门店对比（目标月金额） =====
+        List<Map<String, Object>> storeActuals = consumptionMapper.sumAmountByStore(monthStart, monthEnd, storeId);
+        List<Map<String, Object>> storeMonthlyTargets = sumMonthlyTargetByStore("consumption", targetMonth, storeId);
 
         List<Store> stores = getStores(storeId);
         List<TargetDashboardVO.StoreComparisonItem> storeComparison = new ArrayList<>();

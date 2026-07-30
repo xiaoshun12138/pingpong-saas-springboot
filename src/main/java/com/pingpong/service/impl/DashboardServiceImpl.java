@@ -41,6 +41,7 @@ public class DashboardServiceImpl implements IDashboardService {
     public DashboardVO overview(Long storeId) {
         LocalDateTime monthStart = LocalDateTime.now()
                 .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime now2 = LocalDateTime.now();
 
         long storeCount = storeMapper.selectCount(null);
         long staffCount = storeId == null
@@ -50,33 +51,48 @@ public class DashboardServiceImpl implements IDashboardService {
                 ? studentMapper.selectCount(null)
                 : studentMapper.selectCount(new LambdaQueryWrapper<Student>().eq(Student::getStoreId, storeId));
 
-        // 聚合SQL替代 selectList 全量拖内存
-        LocalDateTime now2 = LocalDateTime.now();
+        // 活跃学员数（status=1 在读）
+        LambdaQueryWrapper<Student> activeStudentQw = new LambdaQueryWrapper<Student>()
+                .eq(Student::getStatus, 1);
+        if (storeId != null) activeStudentQw.eq(Student::getStoreId, storeId);
+        long activeStudentCount = studentMapper.selectCount(activeStudentQw);
+
+        // 本月消课数据
         Long monthLessons = consumptionMapper.sumLessonsInRange(monthStart, now2, storeId);
-        Long monthConsumptionCount = null;
-        // 消课笔数还是需要查
         LambdaQueryWrapper<CourseConsumption> countQw = new LambdaQueryWrapper<CourseConsumption>()
                 .ge(CourseConsumption::getCreatedAt, monthStart);
         if (storeId != null) countQw.eq(CourseConsumption::getStoreId, storeId);
-        monthConsumptionCount = consumptionMapper.selectCount(countQw);
+        long monthConsumptionCount = consumptionMapper.selectCount(countQw);
+        BigDecimal monthConsumptionAmount = consumptionMapper.sumAmountInRange(monthStart, now2, storeId);
 
-        BigDecimal monthOrderAmount = orderMapper.sumAmountInRange(monthStart, now2, storeId);
-        Long monthOrderCount = orderMapper.countInRange(monthStart, now2, storeId);
+        // 本月新报（type=new）
+        Long monthNewCount = orderMapper.countByType(monthStart, now2, storeId, "new");
+        BigDecimal monthNewAmount = orderMapper.sumAmountByType(monthStart, now2, storeId, "new");
 
+        // 本月续费（type=renew）
+        Long monthRenewCount = orderMapper.countByType(monthStart, now2, storeId, "renew");
+        BigDecimal monthRenewAmount = orderMapper.sumAmountByType(monthStart, now2, storeId, "renew");
+
+        // 本月退款
         BigDecimal monthRefundAmount = refundLogMapper.sumAmountInRange(monthStart, now2, storeId);
         Long monthRefundCount = refundLogMapper.countInRange(monthStart, now2, storeId);
 
-        LambdaQueryWrapper<CourseOrder> activeBase = new LambdaQueryWrapper<CourseOrder>()
-                .eq(CourseOrder::getStatus, "active");
-        if (storeId != null) activeBase.eq(CourseOrder::getStoreId, storeId);
-        long activeOrderCount = orderMapper.selectCount(activeBase);
+        String storeName = "总部";
+        if (storeId != null) {
+            Store store = storeMapper.selectById(storeId);
+            storeName = store != null ? store.getName() : "未知门店";
+        }
 
         return new DashboardVO(
-                storeCount, staffCount, studentCount,
+                storeName,
+                storeCount, staffCount, studentCount, activeStudentCount,
                 monthConsumptionCount, monthLessons != null ? monthLessons : 0L,
-                monthOrderCount, monthOrderAmount != null ? monthOrderAmount : BigDecimal.ZERO,
-                monthRefundCount, monthRefundAmount != null ? monthRefundAmount : BigDecimal.ZERO,
-                activeOrderCount
+                monthConsumptionAmount != null ? monthConsumptionAmount : BigDecimal.ZERO,
+                monthNewCount != null ? monthNewCount : 0L,
+                monthNewAmount != null ? monthNewAmount : BigDecimal.ZERO,
+                monthRenewCount != null ? monthRenewCount : 0L,
+                monthRenewAmount != null ? monthRenewAmount : BigDecimal.ZERO,
+                monthRefundCount, monthRefundAmount != null ? monthRefundAmount : BigDecimal.ZERO
         );
     }
 
@@ -115,6 +131,33 @@ public class DashboardServiceImpl implements IDashboardService {
             item.put("salesAmount", salesMap.getOrDefault(s.getId(), BigDecimal.ZERO));
             item.put("orderCount", orderCountMap.getOrDefault(s.getId(), 0L));
             item.put("lessonsConsumed", lessonsMap.getOrDefault(s.getId(), 0L));
+            result.add(item);
+        }
+        return result;
+    }
+
+    @Override
+    public List<Map<String, Object>> dailyTrend(Long storeId) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime monthStart = now.with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = now.with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
+
+        // 查本月有数据的那些天
+        List<Map<String, Object>> rows = orderMapper.sumByDay(monthStart, monthEnd, storeId);
+        Map<Integer, BigDecimal> dayMap = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            int d = ((Number) row.get("d")).intValue();
+            BigDecimal total = row.get("total") == null ? BigDecimal.ZERO : new BigDecimal(row.get("total").toString());
+            dayMap.put(d, total);
+        }
+
+        // 本月所有天，无数据的补 0
+        int daysInMonth = monthEnd.getDayOfMonth();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int d = 1; d <= daysInMonth; d++) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("day", d);
+            item.put("amount", dayMap.getOrDefault(d, BigDecimal.ZERO));
             result.add(item);
         }
         return result;
