@@ -128,6 +128,7 @@ public class CourseOrderController {
         student = new Student();
         student.setName(studentName);
         student.setStoreId(storeId);
+        student.setPhone("");
         student.setStatus(1);
         studentService.save(student);
         order.setStudentId(student.getId());
@@ -163,7 +164,16 @@ public class CourseOrderController {
         order.setStatus("active");
 
         boolean ok = courseOrderService.save(order);
-        return ok ? R.ok() : R.fail("新增失败");
+        if (!ok) return R.fail("新增失败");
+
+        // 6. 同步累加学员剩余总课时（保证 student.total_remaining_lessons 与订单一致）
+        Student studentUpdate = new Student();
+        studentUpdate.setId(student.getId());
+        studentUpdate.setTotalRemainingLessons(order.getTotalLessons());
+        studentUpdate.setVersion(student.getVersion());
+        studentService.updateById(studentUpdate);
+
+        return R.ok();
     }
 
     /**
@@ -249,7 +259,16 @@ public class CourseOrderController {
         }
 
         boolean ok = courseOrderService.save(order);
-        return ok ? R.ok() : R.fail("续费失败");
+        if (!ok) return R.fail("续费失败");
+
+        // 同步累加学员剩余总课时
+        Student studentUpdate = new Student();
+        studentUpdate.setId(student.getId());
+        studentUpdate.setTotalRemainingLessons(student.getTotalRemainingLessons() + order.getTotalLessons());
+        studentUpdate.setVersion(student.getVersion());
+        studentService.updateById(studentUpdate);
+
+        return R.ok();
     }
 
     @DeleteMapping("/{id}")
