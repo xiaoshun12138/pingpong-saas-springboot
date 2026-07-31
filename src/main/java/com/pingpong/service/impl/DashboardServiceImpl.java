@@ -119,9 +119,20 @@ public class DashboardServiceImpl implements IDashboardService {
         }
 
         Map<Long, Long> lessonsMap = new HashMap<>();
+        Map<Long, BigDecimal> consumptionAmountMap = new HashMap<>();
         for (Map<String, Object> row : consumptionRows) {
             long sid = ((Number) row.get("storeId")).longValue();
             if (row.get("lessons") != null) lessonsMap.put(sid, ((Number) row.get("lessons")).longValue());
+            if (row.get("cnt") != null) consumptionAmountMap.put(sid, row.get("total") == null ? BigDecimal.ZERO : new BigDecimal(row.get("total").toString()));
+        }
+
+        // 消课金额（sumAmountByStore）
+        List<Map<String, Object>> consumptionAmountRows = consumptionMapper.sumAmountByStore(monthStart, monthEnd, storeId);
+        for (Map<String, Object> row : consumptionAmountRows) {
+            long sid = ((Number) row.get("storeId")).longValue();
+            if (row.get("amount") != null) {
+                consumptionAmountMap.put(sid, new BigDecimal(row.get("amount").toString()));
+            }
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -131,6 +142,45 @@ public class DashboardServiceImpl implements IDashboardService {
             item.put("salesAmount", salesMap.getOrDefault(s.getId(), BigDecimal.ZERO));
             item.put("orderCount", orderCountMap.getOrDefault(s.getId(), 0L));
             item.put("lessonsConsumed", lessonsMap.getOrDefault(s.getId(), 0L));
+            item.put("consumptionAmount", consumptionAmountMap.getOrDefault(s.getId(), BigDecimal.ZERO));
+            result.add(item);
+        }
+        return result;
+    }
+
+    @Override
+    public List<Map<String, Object>> storeConsumption(Long storeId) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime monthStart = now.with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = now.with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
+
+        List<Store> stores = storeId == null
+                ? storeMapper.selectList(null)
+                : storeMapper.selectList(new LambdaQueryWrapper<Store>().eq(Store::getId, storeId));
+
+        List<Map<String, Object>> consumptionRows = consumptionMapper.sumByStore(monthStart, monthEnd, storeId);
+        List<Map<String, Object>> amountRows = consumptionMapper.sumAmountByStore(monthStart, monthEnd, storeId);
+
+        Map<Long, Long> lessonsMap = new HashMap<>();
+        Map<Long, Long> countMap = new HashMap<>();
+        for (Map<String, Object> row : consumptionRows) {
+            long sid = ((Number) row.get("storeId")).longValue();
+            if (row.get("lessons") != null) lessonsMap.put(sid, ((Number) row.get("lessons")).longValue());
+            if (row.get("cnt") != null) countMap.put(sid, ((Number) row.get("cnt")).longValue());
+        }
+        Map<Long, BigDecimal> amountMap = new HashMap<>();
+        for (Map<String, Object> row : amountRows) {
+            long sid = ((Number) row.get("storeId")).longValue();
+            if (row.get("amount") != null) amountMap.put(sid, new BigDecimal(row.get("amount").toString()));
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Store s : stores) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("storeName", s.getName());
+            item.put("consumptionCount", countMap.getOrDefault(s.getId(), 0L));
+            item.put("lessonsConsumed", lessonsMap.getOrDefault(s.getId(), 0L));
+            item.put("consumptionAmount", amountMap.getOrDefault(s.getId(), BigDecimal.ZERO));
             result.add(item);
         }
         return result;
