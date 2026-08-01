@@ -116,6 +116,10 @@ public class CourseOrderController {
         if (studentName == null || studentName.isBlank()) {
             return R.fail("请输入学员姓名");
         }
+        String studentPhone = (String) order.getParams().get("studentPhone");
+        if (studentPhone == null || studentPhone.isBlank()) {
+            return R.fail("请输入学员手机号");
+        }
         Long storeId = order.getStoreId() != null ? order.getStoreId() : myStoreId;
         Student student = studentMapper.selectOne(
                 new LambdaQueryWrapper<Student>().eq(Student::getName, studentName)
@@ -127,7 +131,7 @@ public class CourseOrderController {
         student = new Student();
         student.setName(studentName);
         student.setStoreId(storeId);
-        student.setPhone(null);
+        student.setPhone(studentPhone);
         student.setPrimaryCoachId(order.getCoachId());
         student.setStatus(1);
         student.setRegisteredAt(LocalDateTime.now());
