@@ -73,7 +73,7 @@ public interface StudentMapper extends BaseMapper<Student> {
     Long countCustomerPool(@Param("storeId") Long storeId, @Param("keyword") String keyword);
 
     /**
-     * 需约课学员：最近上课时间超过 N 天的活跃学员（有剩余课时）
+     * 建议约课学员：最近上课时间超过 N 天的活跃学员（有剩余课时）
      */
     @Select("""
         SELECT 
@@ -110,5 +110,42 @@ public interface StudentMapper extends BaseMapper<Student> {
         ORDER BY s.last_lesson_at ASC
         LIMIT 100
     """)
-    List<Map<String, Object>> needScheduleList(@Param("storeId") Long storeId, @Param("days") Integer days);
+    List<Map<String, Object>> suggestScheduleList(@Param("storeId") Long storeId, @Param("days") Integer days);
+
+    /**
+     * 建议续费学员：剩余课时低于阈值的活跃学员
+     */
+    @Select("""
+        SELECT 
+            s.id,
+            s.name,
+            s.phone,
+            st.name AS storeName,
+            COALESCE(sf.name, '-') AS coachName,
+            s.total_remaining_lessons AS remainingLessons,
+            s.last_lesson_at AS lastLessonAt,
+            COALESCE(paid.totalPaid, 0) AS totalPaid,
+            COALESCE(paid.orderCount, 0) AS orderCount,
+            COALESCE(con.totalLessons, 0) AS totalConsumedLessons
+        FROM student s
+        LEFT JOIN store st ON s.store_id = st.id
+        LEFT JOIN staff sf ON s.primary_coach_id = sf.id
+        LEFT JOIN (
+            SELECT student_id, SUM(paid_amount) AS totalPaid, COUNT(*) AS orderCount
+            FROM course_order WHERE deleted = 0
+            GROUP BY student_id
+        ) paid ON paid.student_id = s.id
+        LEFT JOIN (
+            SELECT student_id, SUM(lessons) AS totalLessons
+            FROM course_consumption WHERE deleted = 0
+            GROUP BY student_id
+        ) con ON con.student_id = s.id
+        WHERE s.deleted = 0
+            AND s.status = 1
+            AND s.total_remaining_lessons <= #{maxRemainingLessons}
+            AND (#{storeId} IS NULL OR s.store_id = #{storeId})
+        ORDER BY s.total_remaining_lessons ASC
+        LIMIT 100
+    """)
+    List<Map<String, Object>> suggestRenewList(@Param("storeId") Long storeId, @Param("maxRemainingLessons") Integer maxRemainingLessons);
 }

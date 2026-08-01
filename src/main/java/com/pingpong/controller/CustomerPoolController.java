@@ -93,10 +93,10 @@ public class CustomerPoolController {
     }
 
     /**
-     * 需约课学员列表：最近上课时间超过 N 天的活跃学员
+     * 建议约课学员列表：最近上课时间超过 N 天的活跃学员（有剩余课时）
      */
-    @GetMapping("/need-schedule")
-    public R<List<Map<String, Object>>> needSchedule(
+    @GetMapping("/suggest-schedule")
+    public R<List<Map<String, Object>>> suggestSchedule(
             @RequestParam(defaultValue = "14") Integer days,
             @RequestParam(required = false) Long storeId,
             HttpServletRequest request) {
@@ -105,7 +105,24 @@ public class CustomerPoolController {
         Long myStoreId = (Long) request.getAttribute("storeId");
         Long filterStoreId = "boss".equals(role) ? storeId : myStoreId;
 
-        List<Map<String, Object>> list = studentMapper.needScheduleList(filterStoreId, days);
+        List<Map<String, Object>> list = studentMapper.suggestScheduleList(filterStoreId, days);
+        return R.ok(list);
+    }
+
+    /**
+     * 建议续费学员列表：剩余课时低于阈值的活跃学员
+     */
+    @GetMapping("/suggest-renew")
+    public R<List<Map<String, Object>>> suggestRenew(
+            @RequestParam(defaultValue = "5") Integer maxRemainingLessons,
+            @RequestParam(required = false) Long storeId,
+            HttpServletRequest request) {
+
+        String role = (String) request.getAttribute("role");
+        Long myStoreId = (Long) request.getAttribute("storeId");
+        Long filterStoreId = "boss".equals(role) ? storeId : myStoreId;
+
+        List<Map<String, Object>> list = studentMapper.suggestRenewList(filterStoreId, maxRemainingLessons);
         return R.ok(list);
     }
 }
