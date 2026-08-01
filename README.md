@@ -1,159 +1,162 @@
-# 项目启动指南
+# 乒乓球培训管理系统（后端）
 
-> 项目路径：`~/Documents/pingpong-saas`（Maven坐标 `pingpong-saas`）
+> Spring Boot 3.x + MyBatis-Plus + MySQL 8.0 + Redis + JWT
 
-## 一、环境版本确认
+## 项目简介
 
-| 组件 | 版本要求 | 本地版本 |
-|------|----------|----------|
-| JDK | ≥ 17 | OpenJDK 25.0.2 (Amazon Corretto) |
-| Maven | ≥ 3.6 | 3.9.15 |
-| MySQL | 8.0 | 8.0.45 |
+面向乒乓球培训机构的 SaaS 管理系统，支持多门店、多角色权限管理。涵盖学员管理、课包订单、消课退款、排课日程、业绩目标、数据看板、客户池等核心业务模块。
 
-确认命令：
+## 技术栈
+
+| 技术 | 版本 | 说明 |
+|------|------|------|
+| Spring Boot | 3.3.5 | 基础框架 |
+| MyBatis-Plus | 3.5.7 | ORM 框架 |
+| MySQL | 8.0 | 关系型数据库 |
+| Redis | - | 缓存（微信 access_token） |
+| JWT | - | 身份认证 |
+| Lombok | 1.18.46 | 简化实体类 |
+| Hutool | - | 工具库 |
+
+## 环境要求
+
+- JDK 17+（推荐 JDK 25）
+- Maven 3.6+
+- MySQL 8.0+
+- Redis（可选，用于微信 access_token 缓存）
+
+## 快速开始
+
+### 1. 克隆仓库
+
 ```bash
-java -version
-mvn -version
-mysql --version
+git clone git@github.com:xiaoshun12138/pingpong-saas-springboot.git
+cd pingpong-saas-springboot
 ```
 
-> ⚠️ 本机 Maven 在 `~/bin/mvn`，已加入 PATH，可直接敲 `mvn`。
+### 2. 创建数据库
 
----
-
-## 二、前置条件：MySQL 数据库已就绪
-
-```bash
-mysql -u root -phelloworld -e "SHOW DATABASES;" 2>&1 | grep pingpong
+```sql
+CREATE DATABASE pingpong_saas DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 ```
 
-预期输出：看到 `pingpong_saas` 数据库名。
+### 3. 修改配置
 
-如果数据库不存在（之前可能删了），从 `~/Desktop/sql2/` 重新初始化：
-```bash
-mysql -u root -phelloworld < ~/Desktop/sql2/01_schema.sql
-mysql -u root -phelloworld pingpong_saas < ~/Desktop/sql2/02_init_data.sql
-```
-
----
-
-## 三、修改 MySQL 密码（如需）
-
-`application.yml` 里写的是 `password: helloworld`，如果本机 MySQL 密码不是这个，改掉：
+编辑 `src/main/resources/application.yml`，修改数据库连接信息：
 
 ```yaml
-# src/main/resources/application.yml 第6行
-password: 你的密码
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/pingpong_saas?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: 你的密码
 ```
 
----
-
-## 四、启动项目
+### 4. 编译运行
 
 ```bash
-cd ~/Documents/pingpong-saas
+mvn compile
 mvn spring-boot:run
 ```
 
-或者先打包再运行：
-```bash
-mvn package -DskipTests
-java -jar target/pingpong-saas-1.0.0.jar
+后端启动在 `http://localhost:8080`，前端构建产物已内嵌在 `static/` 目录下，直接访问即可。
+
+### 5. 默认账号
+
+| 角色 | 手机号 | 密码 |
+|------|--------|------|
+| 老板 (boss) | 13800000001 | 123456 |
+| 店长 (shop_owner) | 13800000002 | 123456 |
+| 教练 (coach) | 13800000003 | 123456 |
+| 销售 (sales) | 13800000004 | 123456 |
+
+## 数据库表结构
+
+共 9 张表：
+
+| 表名 | 说明 |
+|------|------|
+| store | 门店 |
+| staff | 员工（含角色：boss/shop_owner/coach/sales） |
+| student | 学员 |
+| course_type | 课包类型 |
+| course_order | 课包订单（新报/续费） |
+| course_consumption | 消课记录 |
+| refund_log | 退款记录 |
+| monthly_target | 月度目标 |
+| weekly_target | 周度目标 |
+| lesson_schedule | 排课记录 |
+
+## API 接口
+
+共 40+ 个接口，主要模块：
+
+| 模块 | 前缀 | 说明 |
+|------|------|------|
+| 认证 | `/api/auth` | 登录、JWT 签发 |
+| 学员 | `/api/students` | 学员 CRUD、停课/复课、课包查询 |
+| 订单 | `/api/course-orders` | 新报、续费、退款 |
+| 消课 | `/api/course-consumptions` | 消课记录、自动扣课时 |
+| 退款 | `/api/refund-logs` | 退款记录 |
+| 排课 | `/api/schedules` | 排课 CRUD、排课自动消课 |
+| 课包 | `/api/course-types` | 课包类型管理 |
+| 门店 | `/api/stores` | 门店管理 |
+| 员工 | `/api/staff` | 员工管理 |
+| 看板 | `/api/dashboard` | 数据统计、排名、趋势 |
+| 目标 | `/api/target-dashboard` | 业绩目标、课消目标 |
+| 客户池 | `/api/customer-pool` | 学员缴费排名、消课排名、需约课提醒 |
+
+## 权限模型
+
+- **boss（老板）**：全量数据，可按门店筛选
+- **shop_owner（店长）**：仅本门店数据
+- **coach（教练）**：仅查看自己相关的数据
+- **sales（销售）**：仅查看自己相关的数据
+
+数据隔离通过 `AuthInterceptor` 在请求上下文中注入 `role` 和 `storeId`，Controller 层自动过滤。
+
+## 核心业务流程
+
+### 消课流程
+1. 教练选择学员 + 课包订单 → 发起消课
+2. 校验学员状态（停课不可消课）
+3. 校验订单剩余课时（不足抛异常）
+4. 扣减订单 `remaining_lessons`、累加 `consumed_lessons`
+5. 扣减学员 `total_remaining_lessons`（乐观锁）
+6. 更新学员 `last_lesson_at`
+7. 插入 `course_consumption` 记录
+
+### 退款流程
+1. 选择学员 + 课包订单 → 发起退款
+2. 按剩余课时比例计算退款金额：`paidAmount × (remainingLessons / totalLessons)`
+3. 扣减学员 `total_remaining_lessons`
+4. 订单状态改为 `refunded`
+5. 插入 `refund_log` 记录
+6. 消课记录保留
+
+### 排课流程
+1. 选择教练 + 时间段 → 新建排课
+2. 关联学员和课包订单
+3. 保存后自动消课 1 课时
+4. 同段满 6 人阻止添加
+
+## 项目结构
+
+```
+src/main/java/com/pingpong/
+├── PingPongApplication.java       # 启动类
+├── common/                         # 公共类（R 统一响应、异常处理）
+├── config/                         # 配置类（WebConfig、拦截器注册）
+├── controller/                     # 控制器
+├── dto/                            # 数据传输对象
+├── entity/                         # 实体类
+├── interceptor/                    # JWT 拦截器
+├── mapper/                         # MyBatis-Plus Mapper
+├── service/                        # Service 接口 + 实现
+└── vo/                             # 视图对象
 ```
 
-启动成功后看到：
-```
-Tomcat started on port(s): 8080
-Started PingPongApplication in X.XX seconds
-```
+## GitHub
 
----
-
-## 五、验证接口是否通
-
-浏览器或 curl 访问：
-
-```bash
-# 健康检查（门店列表）
-curl http://localhost:8080/api/stores
-
-# 学员列表（分页）
-curl http://localhost:8080/api/students
-
-# 课包列表
-curl http://localhost:8080/api/course-types
-```
-
-预期返回 JSON：
-```json
-{"code":200,"message":"操作成功","data":{...}}
-```
-
----
-
-## 六、所有接口一览
-
-| 模块 | 方法 | URL | 说明 |
-|------|------|-----|------|
-| 门店 | GET | `/api/stores` | 门店列表（分页） |
-| 门店 | GET | `/api/stores/{id}` | 门店详情 |
-| 门店 | POST | `/api/stores` | 新增门店 |
-| 门店 | PUT | `/api/stores` | 更新门店 |
-| 门店 | DELETE | `/api/stores/{id}` | 删除门店 |
-| 员工 | GET | `/api/staff` | 员工列表（分页） |
-| 员工 | GET | `/api/staff/{id}` | 员工详情 |
-| 员工 | POST | `/api/staff` | 新增员工 |
-| 员工 | PUT | `/api/staff` | 更新员工 |
-| 员工 | DELETE | `/api/staff/{id}` | 删除员工 |
-| 学员 | GET | `/api/students` | 学员列表（分页） |
-| 学员 | GET | `/api/students/{id}` | 学员详情 |
-| 学员 | POST | `/api/students` | 新增学员 |
-| 学员 | PUT | `/api/students` | 更新学员 |
-| 学员 | DELETE | `/api/students/{id}` | 删除学员 |
-| 课包 | GET | `/api/course-types` | 课包列表 |
-| 课包 | GET | `/api/course-types/{id}` | 课包详情 |
-| 课包 | POST | `/api/course-types` | 新增课包 |
-| 课包 | PUT | `/api/course-types` | 更新课包 |
-| 课包 | DELETE | `/api/course-types/{id}` | 删除课包 |
-| 订单 | GET | `/api/course-orders` | 订单列表（分页） |
-| 订单 | GET | `/api/course-orders/{id}` | 订单详情 |
-| 订单 | POST | `/api/course-orders` | 新增订单 |
-| 订单 | PUT | `/api/course-orders` | 更新订单 |
-| 订单 | DELETE | `/api/course-orders/{id}` | 删除订单 |
-| 消课 | GET | `/api/course-consumptions` | 消课记录（分页） |
-| 消课 | GET | `/api/course-consumptions/{id}` | 消课详情 |
-| 消课 | POST | `/api/course-consumptions` | 新增消课 |
-| 消课 | PUT | `/api/course-consumptions` | 更新消课 |
-| 消课 | DELETE | `/api/course-consumptions/{id}` | 删除消课 |
-| 月目标 | GET | `/api/monthly-targets` | 月度目标列表 |
-| 月目标 | POST | `/api/monthly-targets` | 新增月度目标 |
-| 退款 | GET | `/api/refund-logs` | 退款记录列表 |
-| 退款 | POST | `/api/refund-logs` | 新增退款（只读） |
-| 周目标 | GET | `/api/weekly-targets` | 周目标列表 |
-| 周目标 | POST | `/api/weekly-targets` | 新增周目标 |
-| 周目标 | PUT | `/api/weekly-targets` | 更新周目标 |
-| 周目标 | DELETE | `/api/weekly-targets/{id}` | 删除周目标 |
-
----
-
-## 七、分页参数
-
-所有列表接口支持分页：
-```
-GET /api/students?current=1&size=20
-```
-- `current`：当前页（默认 1）
-- `size`：每页条数（默认 10）
-
----
-
-## 八、常见问题
-
-**Q: `com.mysql.cj.jdbc.Driver` 找不到？**
-A: 检查 `application.yml` 里 `driver-class-name` 是否写对，MySQL 8 用 `com.mysql.cj.jdbc.Driver`，旧版用 `com.mysql.jdbc.Driver`。
-
-**Q: 启动报数据库连接失败？**
-A: 确认 MySQL 在运行：`mysql -u root -phelloworld -e "SELECT 1"`
-
-**Q: 字段映射不上？**
-A: `application.yml` 已配置 `map-underscore-to-camel-case: true`，下划线自动转驼峰，无需额外配置。
+- 后端仓库：https://github.com/xiaoshun12138/pingpong-saas-springboot
+- 前端仓库：https://github.com/xiaoshun12138/pingpong-saas-vue

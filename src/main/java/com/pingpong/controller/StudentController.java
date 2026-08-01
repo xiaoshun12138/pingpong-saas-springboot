@@ -50,6 +50,8 @@ public class StudentController {
                                  @RequestParam(defaultValue = "10") Integer size,
                                  @RequestParam(required = false) Long storeId,
                                  @RequestParam(required = false) String keyword,
+                                 @RequestParam(required = false) String sortBy,
+                                 @RequestParam(required = false) String sortOrder,
                                  HttpServletRequest request) {
         // 从请求上下文中获取当前登录用户的角色和门店
         String role = (String) request.getAttribute("role");
@@ -62,8 +64,20 @@ public class StudentController {
                 .and(keyword != null && !keyword.isBlank(), w -> w
                         .like(Student::getName, keyword)
                         .or()
-                        .like(Student::getPhone, keyword))
-                .orderByDesc(Student::getId);
+                        .like(Student::getPhone, keyword));
+        // 排序支持
+        if (sortBy != null && !sortBy.isBlank()) {
+            boolean asc = "asc".equalsIgnoreCase(sortOrder);
+            switch (sortBy) {
+                case "totalRemainingLessons" -> wrapper.orderBy(true, asc, Student::getTotalRemainingLessons);
+                case "registeredAt" -> wrapper.orderBy(true, asc, Student::getRegisteredAt);
+                case "lastLessonAt" -> wrapper.orderBy(true, asc, Student::getLastLessonAt);
+                case "name" -> wrapper.orderBy(true, asc, Student::getName);
+                default -> wrapper.orderByDesc(Student::getId);
+            }
+        } else {
+            wrapper.orderByDesc(Student::getId);
+        }
         Page<Student> page = new Page<>(current, size);
         return R.ok(studentService.page(page, wrapper));
     }
