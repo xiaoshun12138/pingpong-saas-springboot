@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 public interface RefundLogMapper extends BaseMapper<RefundLog> {
 
     @Select("SELECT COALESCE(SUM(refund_amount), 0) FROM refund_log WHERE 1=1 " +
+            "AND deleted = 0 " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId})")
     BigDecimal sumAmountInRange(@Param("start") LocalDateTime start,
@@ -23,6 +24,7 @@ public interface RefundLogMapper extends BaseMapper<RefundLog> {
                                  @Param("storeId") Long storeId);
 
     @Select("SELECT COUNT(*) FROM refund_log WHERE 1=1 " +
+            "AND deleted = 0 " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId})")
     Long countInRange(@Param("start") LocalDateTime start,

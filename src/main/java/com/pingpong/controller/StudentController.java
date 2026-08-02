@@ -61,6 +61,8 @@ public class StudentController {
 
         LambdaQueryWrapper<Student> wrapper = new LambdaQueryWrapper<Student>()
                 .eq(filterStoreId != null, Student::getStoreId, filterStoreId)
+                .eq(student.getStatus() != null, Student::getStatus, student.getStatus())
+                .eq(student.getPrimaryCoachId() != null, Student::getPrimaryCoachId, student.getPrimaryCoachId())
                 .and(keyword != null && !keyword.isBlank(), w -> w
                         .like(Student::getName, keyword)
                         .or()

@@ -68,8 +68,8 @@ public class RefundLogServiceImpl extends ServiceImpl<RefundLogMapper, RefundLog
         if (!"active".equals(order.getStatus())) {
             throw new RuntimeException("订单状态异常，当前状态：" + order.getStatus() + "，只有 active 状态的订单可以退款");
         }
-        if (order.getRemainingLessons() < refundLog.getRefundLessons()) {
-            throw new RuntimeException("退款课时数超过订单剩余课时，订单剩余：" + order.getRemainingLessons() + "，申请退款：" + refundLog.getRefundLessons());
+        if (!order.getRemainingLessons().equals(refundLog.getRefundLessons())) {
+            throw new RuntimeException("退款课时数必须等于订单剩余课时，订单剩余：" + order.getRemainingLessons() + "，申请退款：" + refundLog.getRefundLessons());
         }
 
         // ========== 3. 校验退款学员与订单中的学员一致 ==========

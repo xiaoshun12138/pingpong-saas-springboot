@@ -10,6 +10,7 @@ import com.pingpong.service.ICourseTypeService;
 import com.pingpong.service.IStudentService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 课包订单 Service 实现类
@@ -36,5 +37,34 @@ public class CourseOrderServiceImpl extends ServiceImpl<CourseOrderMapper, Cours
             CourseType ct = courseTypeService.getById(order.getCourseTypeId());
             order.setCourseTypeName(ct != null ? ct.getName() : "-");
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void createOrderWithNewStudent(CourseOrder order, Student student) {
+        // 1. 创建学员
+        studentService.save(student);
+        order.setStudentId(student.getId());
+        // 2. 保存订单
+        this.save(order);
+        // 3. 累加学员总剩余课时
+        Student updateStudent = new Student();
+        updateStudent.setId(student.getId());
+        updateStudent.setTotalRemainingLessons(order.getTotalLessons());
+        updateStudent.setVersion(student.getVersion());
+        studentService.updateById(updateStudent);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void renewOrder(CourseOrder order, Student student) {
+        // 1. 保存续费订单
+        this.save(order);
+        // 2. 累加学员总剩余课时
+        Student updateStudent = new Student();
+        updateStudent.setId(student.getId());
+        updateStudent.setTotalRemainingLessons(student.getTotalRemainingLessons() + order.getTotalLessons());
+        updateStudent.setVersion(student.getVersion());
+        studentService.updateById(updateStudent);
     }
 }

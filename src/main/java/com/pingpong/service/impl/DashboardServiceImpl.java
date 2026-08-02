@@ -224,6 +224,8 @@ public class DashboardServiceImpl implements IDashboardService {
     public List<RankingItem> coachLessonRanking(Long storeId, String sortBy, boolean asc, int topN) {
         LocalDateTime monthStart = LocalDateTime.now()
                 .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = LocalDateTime.now()
+                .with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
 
         // 查询教练
         LambdaQueryWrapper<Staff> staffQw = new LambdaQueryWrapper<Staff>()
@@ -232,35 +234,16 @@ public class DashboardServiceImpl implements IDashboardService {
         if (storeId != null) staffQw.eq(Staff::getStoreId, storeId);
         List<Staff> coaches = staffMapper.selectList(staffQw);
 
-        // 查询本月消课记录
-        LambdaQueryWrapper<CourseConsumption> cw = new LambdaQueryWrapper<CourseConsumption>()
-                .ge(CourseConsumption::getCreatedAt, monthStart);
-        if (storeId != null) cw.eq(CourseConsumption::getStoreId, storeId);
-        List<CourseConsumption> consumptions = consumptionMapper.selectList(cw);
-
-        // 批量查询关联订单（避免 N+1）
-        Set<Long> orderIds = consumptions.stream()
-                .map(CourseConsumption::getCourseOrderId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        Map<Long, CourseOrder> orderMap = new HashMap<>();
-        if (!orderIds.isEmpty()) {
-            orderMapper.selectBatchIds(orderIds).forEach(o -> orderMap.put(o.getId(), o));
-        }
-
-        // 聚合：课时、次数、金额
+        // SQL 聚合查询
+        List<Map<String, Object>> rows = consumptionMapper.rankByCoach(monthStart, monthEnd, storeId);
         Map<Long, Long> lessonsMap = new HashMap<>();
         Map<Long, Long> countMap = new HashMap<>();
         Map<Long, BigDecimal> amountMap = new HashMap<>();
-        for (CourseConsumption c : consumptions) {
-            lessonsMap.merge(c.getCoachId(), (long) c.getLessons(), Long::sum);
-            countMap.merge(c.getCoachId(), 1L, Long::sum);
-            CourseOrder order = orderMap.get(c.getCourseOrderId());
-            if (order != null && order.getTotalLessons() != null && order.getTotalLessons() > 0) {
-                BigDecimal unitPrice = order.getPaidAmount()
-                        .divide(BigDecimal.valueOf(order.getTotalLessons()), 2, RoundingMode.HALF_UP);
-                amountMap.merge(c.getCoachId(), unitPrice.multiply(BigDecimal.valueOf(c.getLessons())), BigDecimal::add);
-            }
+        for (Map<String, Object> row : rows) {
+            long coachId = ((Number) row.get("coachId")).longValue();
+            lessonsMap.put(coachId, row.get("lessons") != null ? ((Number) row.get("lessons")).longValue() : 0L);
+            countMap.put(coachId, row.get("cnt") != null ? ((Number) row.get("cnt")).longValue() : 0L);
+            amountMap.put(coachId, row.get("amount") != null ? new BigDecimal(row.get("amount").toString()) : BigDecimal.ZERO);
         }
 
         Map<Long, String> storeNameMap = storeMapper.selectList(null).stream()
@@ -270,27 +253,16 @@ public class DashboardServiceImpl implements IDashboardService {
         for (Staff coach : coaches) {
             long l = lessonsMap.getOrDefault(coach.getId(), 0L);
             BigDecimal amt = amountMap.getOrDefault(coach.getId(), BigDecimal.ZERO);
-            RankingItem item = new RankingItem(
+            list.add(new RankingItem(
                     coach.getId(), coach.getName(),
                     storeNameMap.getOrDefault(coach.getStoreId(), "未知"),
                     BigDecimal.valueOf(l),
                     countMap.getOrDefault(coach.getId(), 0L),
                     amt, 0, null
-            );
-            list.add(item);
+            ));
         }
 
-        // 先按默认规则排好，算出固定排名序号
-        list.sort((a, b) -> {
-            int cmp = b.getValue().compareTo(a.getValue());
-            if (cmp != 0) return cmp;
-            return b.getLessonAmount().compareTo(a.getLessonAmount());
-        });
-        for (int i = 0; i < list.size(); i++) {
-            list.get(i).setRank(i + 1);
-        }
-
-        // 再按用户选择的排序方向重新排
+        // 先排序再分配 rank
         if ("amount".equals(sortBy)) {
             list.sort((a, b) -> asc
                     ? a.getLessonAmount().compareTo(b.getLessonAmount())
@@ -299,6 +271,9 @@ public class DashboardServiceImpl implements IDashboardService {
             list.sort((a, b) -> asc
                     ? a.getValue().compareTo(b.getValue())
                     : b.getValue().compareTo(a.getValue()));
+        }
+        for (int i = 0; i < list.size(); i++) {
+            list.get(i).setRank(i + 1);
         }
 
         return list.stream().limit(topN > 0 ? topN : list.size()).collect(Collectors.toList());
@@ -310,6 +285,8 @@ public class DashboardServiceImpl implements IDashboardService {
     public List<RankingItem> coachSalesRanking(Long storeId, int topN) {
         LocalDateTime monthStart = LocalDateTime.now()
                 .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = LocalDateTime.now()
+                .with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
 
         LambdaQueryWrapper<Staff> staffQw = new LambdaQueryWrapper<Staff>()
                 .in(Staff::getRole, "coach", "shop_owner")
@@ -317,18 +294,14 @@ public class DashboardServiceImpl implements IDashboardService {
         if (storeId != null) staffQw.eq(Staff::getStoreId, storeId);
         List<Staff> coaches = staffMapper.selectList(staffQw);
 
-        LambdaQueryWrapper<CourseOrder> ow = new LambdaQueryWrapper<CourseOrder>()
-                .ge(CourseOrder::getCreatedAt, monthStart);
-        if (storeId != null) ow.eq(CourseOrder::getStoreId, storeId);
-        List<CourseOrder> orders = orderMapper.selectList(ow);
-
+        // SQL 聚合查询
+        List<Map<String, Object>> rows = orderMapper.rankByCoach(monthStart, monthEnd, storeId);
         Map<Long, BigDecimal> amountMap = new HashMap<>();
         Map<Long, Long> countMap = new HashMap<>();
-        for (CourseOrder o : orders) {
-            if (o.getCoachId() != null) {
-                amountMap.merge(o.getCoachId(), o.getPaidAmount(), BigDecimal::add);
-                countMap.merge(o.getCoachId(), 1L, Long::sum);
-            }
+        for (Map<String, Object> row : rows) {
+            long staffId = ((Number) row.get("staffId")).longValue();
+            amountMap.put(staffId, row.get("amount") != null ? new BigDecimal(row.get("amount").toString()) : BigDecimal.ZERO);
+            countMap.put(staffId, row.get("cnt") != null ? ((Number) row.get("cnt")).longValue() : 0L);
         }
 
         Map<Long, String> storeNameMap = storeMapper.selectList(null).stream()
@@ -345,17 +318,16 @@ public class DashboardServiceImpl implements IDashboardService {
             ));
         }
         list.sort((a, b) -> b.getValue().compareTo(a.getValue()));
-        List<RankingItem> top = list.stream().limit(topN > 0 ? topN : list.size()).collect(Collectors.toList());
-        for (int i = 0; i < top.size(); i++) {
-            top.get(i).setRank(i + 1);
-        }
-        return top;
+        for (int i = 0; i < list.size(); i++) list.get(i).setRank(i + 1);
+        return list.stream().limit(topN > 0 ? topN : list.size()).collect(Collectors.toList());
     }
 
     @Override
     public List<RankingItem> salesRanking(Long storeId, int topN) {
         LocalDateTime monthStart = LocalDateTime.now()
                 .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = LocalDateTime.now()
+                .with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
 
         LambdaQueryWrapper<Staff> staffQw = new LambdaQueryWrapper<Staff>()
                 .eq(Staff::getRole, "sales")
@@ -363,18 +335,14 @@ public class DashboardServiceImpl implements IDashboardService {
         if (storeId != null) staffQw.eq(Staff::getStoreId, storeId);
         List<Staff> salesPeople = staffMapper.selectList(staffQw);
 
-        LambdaQueryWrapper<CourseOrder> ow = new LambdaQueryWrapper<CourseOrder>()
-                .ge(CourseOrder::getCreatedAt, monthStart);
-        if (storeId != null) ow.eq(CourseOrder::getStoreId, storeId);
-        List<CourseOrder> orders = orderMapper.selectList(ow);
-
+        // SQL 聚合查询
+        List<Map<String, Object>> rows = orderMapper.rankBySales(monthStart, monthEnd, storeId);
         Map<Long, BigDecimal> amountMap = new HashMap<>();
         Map<Long, Long> countMap = new HashMap<>();
-        for (CourseOrder o : orders) {
-            if (o.getSalesId() != null) {
-                amountMap.merge(o.getSalesId(), o.getPaidAmount(), BigDecimal::add);
-                countMap.merge(o.getSalesId(), 1L, Long::sum);
-            }
+        for (Map<String, Object> row : rows) {
+            long staffId = ((Number) row.get("staffId")).longValue();
+            amountMap.put(staffId, row.get("amount") != null ? new BigDecimal(row.get("amount").toString()) : BigDecimal.ZERO);
+            countMap.put(staffId, row.get("cnt") != null ? ((Number) row.get("cnt")).longValue() : 0L);
         }
 
         Map<Long, String> storeNameMap = storeMapper.selectList(null).stream()
@@ -391,25 +359,19 @@ public class DashboardServiceImpl implements IDashboardService {
             ));
         }
         list.sort((a, b) -> b.getValue().compareTo(a.getValue()));
-        List<RankingItem> top = list.stream().limit(topN > 0 ? topN : list.size()).collect(Collectors.toList());
-        for (int i = 0; i < top.size(); i++) {
-            top.get(i).setRank(i + 1);
-        }
-        return top;
+        for (int i = 0; i < list.size(); i++) list.get(i).setRank(i + 1);
+        return list.stream().limit(topN > 0 ? topN : list.size()).collect(Collectors.toList());
     }
 
     @Override
     public List<RankingItem> performanceRanking(String type, Long storeId, String sortBy, boolean asc, int topN) {
         LocalDateTime monthStart = LocalDateTime.now()
                 .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = LocalDateTime.now()
+                .with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
 
         Map<Long, String> storeNameMap = storeMapper.selectList(null).stream()
                 .collect(Collectors.toMap(Store::getId, Store::getName));
-
-        LambdaQueryWrapper<CourseOrder> ow = new LambdaQueryWrapper<CourseOrder>()
-                .ge(CourseOrder::getCreatedAt, monthStart);
-        if (storeId != null) ow.eq(CourseOrder::getStoreId, storeId);
-        List<CourseOrder> orders = orderMapper.selectList(ow);
 
         List<RankingItem> list = new ArrayList<>();
 
@@ -420,13 +382,14 @@ public class DashboardServiceImpl implements IDashboardService {
             if (storeId != null) coachQw.eq(Staff::getStoreId, storeId);
             List<Staff> coaches = staffMapper.selectList(coachQw);
 
+            // SQL 聚合查询
+            List<Map<String, Object>> rows = orderMapper.rankByCoach(monthStart, monthEnd, storeId);
             Map<Long, BigDecimal> coachAmount = new HashMap<>();
             Map<Long, Long> coachCount = new HashMap<>();
-            for (CourseOrder o : orders) {
-                if (o.getCoachId() != null) {
-                    coachAmount.merge(o.getCoachId(), o.getPaidAmount(), BigDecimal::add);
-                    coachCount.merge(o.getCoachId(), 1L, Long::sum);
-                }
+            for (Map<String, Object> row : rows) {
+                long staffId = ((Number) row.get("staffId")).longValue();
+                coachAmount.put(staffId, row.get("amount") != null ? new BigDecimal(row.get("amount").toString()) : BigDecimal.ZERO);
+                coachCount.put(staffId, row.get("cnt") != null ? ((Number) row.get("cnt")).longValue() : 0L);
             }
             for (Staff coach : coaches) {
                 list.add(new RankingItem(
@@ -446,13 +409,14 @@ public class DashboardServiceImpl implements IDashboardService {
             if (storeId != null) salesQw.eq(Staff::getStoreId, storeId);
             List<Staff> salesPeople = staffMapper.selectList(salesQw);
 
+            // SQL 聚合查询
+            List<Map<String, Object>> rows = orderMapper.rankBySales(monthStart, monthEnd, storeId);
             Map<Long, BigDecimal> salesAmount = new HashMap<>();
             Map<Long, Long> salesCount = new HashMap<>();
-            for (CourseOrder o : orders) {
-                if (o.getSalesId() != null) {
-                    salesAmount.merge(o.getSalesId(), o.getPaidAmount(), BigDecimal::add);
-                    salesCount.merge(o.getSalesId(), 1L, Long::sum);
-                }
+            for (Map<String, Object> row : rows) {
+                long staffId = ((Number) row.get("staffId")).longValue();
+                salesAmount.put(staffId, row.get("amount") != null ? new BigDecimal(row.get("amount").toString()) : BigDecimal.ZERO);
+                salesCount.put(staffId, row.get("cnt") != null ? ((Number) row.get("cnt")).longValue() : 0L);
             }
             for (Staff sales : salesPeople) {
                 list.add(new RankingItem(
@@ -465,9 +429,7 @@ public class DashboardServiceImpl implements IDashboardService {
             }
         }
 
-        list.sort((a, b) -> b.getValue().compareTo(a.getValue()));
-        for (int i = 0; i < list.size(); i++) list.get(i).setRank(i + 1);
-
+        // 先排序再分配 rank
         if ("count".equals(sortBy)) {
             list.sort((a, b) -> asc
                     ? Long.compare(a.getCount(), b.getCount())
@@ -477,6 +439,7 @@ public class DashboardServiceImpl implements IDashboardService {
                     ? a.getValue().compareTo(b.getValue())
                     : b.getValue().compareTo(a.getValue()));
         }
+        for (int i = 0; i < list.size(); i++) list.get(i).setRank(i + 1);
 
         return list.stream().limit(topN > 0 ? topN : list.size()).collect(Collectors.toList());
     }
@@ -487,38 +450,23 @@ public class DashboardServiceImpl implements IDashboardService {
     public List<StoreRankingItem> storeLessonRanking(Long storeId) {
         LocalDateTime monthStart = LocalDateTime.now()
                 .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = LocalDateTime.now()
+                .with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
 
         List<Store> stores = storeId == null
                 ? storeMapper.selectList(null)
                 : storeMapper.selectList(new LambdaQueryWrapper<Store>().eq(Store::getId, storeId));
 
-        // 聚合SQL
-        LambdaQueryWrapper<CourseConsumption> cw = new LambdaQueryWrapper<CourseConsumption>()
-                .ge(CourseConsumption::getCreatedAt, monthStart);
-        if (storeId != null) cw.eq(CourseConsumption::getStoreId, storeId);
-        List<CourseConsumption> consumptions = consumptionMapper.selectList(cw);
-
-        Set<Long> orderIds = consumptions.stream()
-                .map(CourseConsumption::getCourseOrderId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        Map<Long, CourseOrder> orderMap = new HashMap<>();
-        if (!orderIds.isEmpty()) {
-            orderMapper.selectBatchIds(orderIds).forEach(o -> orderMap.put(o.getId(), o));
-        }
-
+        // SQL 聚合查询
+        List<Map<String, Object>> rows = consumptionMapper.rankByStore(monthStart, monthEnd, storeId);
         Map<Long, Long> lessonsMap = new HashMap<>();
         Map<Long, Long> countMap = new HashMap<>();
         Map<Long, BigDecimal> amountMap = new HashMap<>();
-        for (CourseConsumption c : consumptions) {
-            lessonsMap.merge(c.getStoreId(), (long) c.getLessons(), Long::sum);
-            countMap.merge(c.getStoreId(), 1L, Long::sum);
-            CourseOrder order = orderMap.get(c.getCourseOrderId());
-            if (order != null && order.getTotalLessons() != null && order.getTotalLessons() > 0) {
-                BigDecimal unitPrice = order.getPaidAmount()
-                        .divide(BigDecimal.valueOf(order.getTotalLessons()), 2, RoundingMode.HALF_UP);
-                amountMap.merge(c.getStoreId(), unitPrice.multiply(BigDecimal.valueOf(c.getLessons())), BigDecimal::add);
-            }
+        for (Map<String, Object> row : rows) {
+            long sid = ((Number) row.get("storeId")).longValue();
+            lessonsMap.put(sid, row.get("lessons") != null ? ((Number) row.get("lessons")).longValue() : 0L);
+            countMap.put(sid, row.get("cnt") != null ? ((Number) row.get("cnt")).longValue() : 0L);
+            amountMap.put(sid, row.get("amount") != null ? new BigDecimal(row.get("amount").toString()) : BigDecimal.ZERO);
         }
 
         List<StoreRankingItem> list = new ArrayList<>();
@@ -541,30 +489,28 @@ public class DashboardServiceImpl implements IDashboardService {
     public List<StoreRankingItem> storePerformanceRanking(Long storeId) {
         LocalDateTime monthStart = LocalDateTime.now()
                 .with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0).withSecond(0);
+        LocalDateTime monthEnd = LocalDateTime.now()
+                .with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59).withSecond(59);
 
         List<Store> stores = storeId == null
                 ? storeMapper.selectList(null)
                 : storeMapper.selectList(new LambdaQueryWrapper<Store>().eq(Store::getId, storeId));
 
-        LambdaQueryWrapper<CourseOrder> ow = new LambdaQueryWrapper<CourseOrder>()
-                .ge(CourseOrder::getCreatedAt, monthStart);
-        if (storeId != null) ow.eq(CourseOrder::getStoreId, storeId);
-        List<CourseOrder> orders = orderMapper.selectList(ow);
-
-        LambdaQueryWrapper<CourseConsumption> cw = new LambdaQueryWrapper<CourseConsumption>()
-                .ge(CourseConsumption::getCreatedAt, monthStart);
-        if (storeId != null) cw.eq(CourseConsumption::getStoreId, storeId);
-        List<CourseConsumption> consumptions = consumptionMapper.selectList(cw);
-
+        // SQL 聚合查询
+        List<Map<String, Object>> salesRows = orderMapper.rankByStore(monthStart, monthEnd, storeId);
         Map<Long, BigDecimal> salesMap = new HashMap<>();
         Map<Long, Long> orderCountMap = new HashMap<>();
-        for (CourseOrder o : orders) {
-            salesMap.merge(o.getStoreId(), o.getPaidAmount(), BigDecimal::add);
-            orderCountMap.merge(o.getStoreId(), 1L, Long::sum);
+        for (Map<String, Object> row : salesRows) {
+            long sid = ((Number) row.get("storeId")).longValue();
+            salesMap.put(sid, row.get("amount") != null ? new BigDecimal(row.get("amount").toString()) : BigDecimal.ZERO);
+            orderCountMap.put(sid, row.get("cnt") != null ? ((Number) row.get("cnt")).longValue() : 0L);
         }
+
+        List<Map<String, Object>> consumptionRows = consumptionMapper.rankByStore(monthStart, monthEnd, storeId);
         Map<Long, Long> lessonsMap = new HashMap<>();
-        for (CourseConsumption c : consumptions) {
-            lessonsMap.merge(c.getStoreId(), (long) c.getLessons(), Long::sum);
+        for (Map<String, Object> row : consumptionRows) {
+            long sid = ((Number) row.get("storeId")).longValue();
+            lessonsMap.put(sid, row.get("lessons") != null ? ((Number) row.get("lessons")).longValue() : 0L);
         }
 
         List<StoreRankingItem> list = new ArrayList<>();

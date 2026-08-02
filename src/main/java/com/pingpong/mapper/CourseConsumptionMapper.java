@@ -23,6 +23,7 @@ public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
      */
     @Select("SELECT MONTH(created_at) AS m, COALESCE(SUM(lessons), 0) AS lessons " +
             "FROM course_consumption WHERE 1=1 " +
+            "AND deleted = 0 " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId}) " +
             "GROUP BY MONTH(created_at) ORDER BY m")
@@ -36,6 +37,7 @@ public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
      */
     @Select("SELECT store_id AS storeId, MONTH(created_at) AS m, COALESCE(SUM(lessons), 0) AS lessons " +
             "FROM course_consumption WHERE 1=1 " +
+            "AND deleted = 0 " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId}) " +
             "GROUP BY store_id, MONTH(created_at) ORDER BY store_id, m")
@@ -49,6 +51,7 @@ public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
      */
     @Select("SELECT store_id AS storeId, COALESCE(SUM(lessons), 0) AS lessons, COUNT(*) AS cnt " +
             "FROM course_consumption WHERE 1=1 " +
+            "AND deleted = 0 " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId}) " +
             "GROUP BY store_id")
@@ -60,6 +63,7 @@ public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
      * 带时间范围的 SUM(lessons)
      */
     @Select("SELECT COALESCE(SUM(lessons), 0) FROM course_consumption WHERE 1=1 " +
+            "AND deleted = 0 " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId})")
     Long sumLessonsInRange(@Param("start") LocalDateTime start,
@@ -75,8 +79,9 @@ public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
     @Select("SELECT MONTH(cc.created_at) AS m, " +
             "COALESCE(SUM(cc.lessons * co.paid_amount / co.total_lessons), 0) AS amount " +
             "FROM course_consumption cc " +
-            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 " +
-            "WHERE cc.created_at >= #{start} AND cc.created_at <= #{end} " +
+            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 AND co.deleted = 0 " +
+            "WHERE cc.deleted = 0 " +
+            "AND cc.created_at >= #{start} AND cc.created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR cc.store_id = #{storeId}) " +
             "GROUP BY MONTH(cc.created_at) ORDER BY m")
     List<Map<String, Object>> sumAmountByMonth(@Param("start") LocalDateTime start,
@@ -90,8 +95,9 @@ public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
     @Select("SELECT cc.store_id AS storeId, MONTH(cc.created_at) AS m, " +
             "COALESCE(SUM(cc.lessons * co.paid_amount / co.total_lessons), 0) AS amount " +
             "FROM course_consumption cc " +
-            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 " +
-            "WHERE cc.created_at >= #{start} AND cc.created_at <= #{end} " +
+            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 AND co.deleted = 0 " +
+            "WHERE cc.deleted = 0 " +
+            "AND cc.created_at >= #{start} AND cc.created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR cc.store_id = #{storeId}) " +
             "GROUP BY cc.store_id, MONTH(cc.created_at) ORDER BY cc.store_id, m")
     List<Map<String, Object>> sumAmountByStoreAndMonth(@Param("start") LocalDateTime start,
@@ -106,8 +112,9 @@ public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
             "COALESCE(SUM(cc.lessons * co.paid_amount / co.total_lessons), 0) AS amount, " +
             "COUNT(*) AS cnt " +
             "FROM course_consumption cc " +
-            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 " +
-            "WHERE cc.created_at >= #{start} AND cc.created_at <= #{end} " +
+            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 AND co.deleted = 0 " +
+            "WHERE cc.deleted = 0 " +
+            "AND cc.created_at >= #{start} AND cc.created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR cc.store_id = #{storeId}) " +
             "GROUP BY cc.store_id")
     List<Map<String, Object>> sumAmountByStore(@Param("start") LocalDateTime start,
@@ -119,10 +126,47 @@ public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
      */
     @Select("SELECT COALESCE(SUM(cc.lessons * co.paid_amount / co.total_lessons), 0) " +
             "FROM course_consumption cc " +
-            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 " +
-            "WHERE cc.created_at >= #{start} AND cc.created_at <= #{end} " +
+            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 AND co.deleted = 0 " +
+            "WHERE cc.deleted = 0 " +
+            "AND cc.created_at >= #{start} AND cc.created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR cc.store_id = #{storeId})")
     BigDecimal sumAmountInRange(@Param("start") LocalDateTime start,
                                 @Param("end") LocalDateTime end,
                                 @Param("storeId") Long storeId);
+
+    // ===== 排名聚合方法（SQL GROUP BY 替代内存聚合） =====
+
+    /**
+     * 教练课消排名聚合（按 coach_id 分组）
+     */
+    @Select("SELECT cc.coach_id AS coachId, " +
+            "COALESCE(SUM(cc.lessons), 0) AS lessons, " +
+            "COUNT(*) AS cnt, " +
+            "COALESCE(SUM(cc.lessons * co.paid_amount / co.total_lessons), 0) AS amount " +
+            "FROM course_consumption cc " +
+            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 AND co.deleted = 0 " +
+            "WHERE cc.deleted = 0 " +
+            "AND cc.created_at >= #{start} AND cc.created_at <= #{end} " +
+            "AND (#{storeId} IS NULL OR cc.store_id = #{storeId}) " +
+            "GROUP BY cc.coach_id")
+    List<Map<String, Object>> rankByCoach(@Param("start") LocalDateTime start,
+                                           @Param("end") LocalDateTime end,
+                                           @Param("storeId") Long storeId);
+
+    /**
+     * 门店课消排名聚合（按 store_id 分组）
+     */
+    @Select("SELECT cc.store_id AS storeId, " +
+            "COALESCE(SUM(cc.lessons), 0) AS lessons, " +
+            "COUNT(*) AS cnt, " +
+            "COALESCE(SUM(cc.lessons * co.paid_amount / co.total_lessons), 0) AS amount " +
+            "FROM course_consumption cc " +
+            "JOIN course_order co ON cc.course_order_id = co.id AND co.total_lessons > 0 AND co.deleted = 0 " +
+            "WHERE cc.deleted = 0 " +
+            "AND cc.created_at >= #{start} AND cc.created_at <= #{end} " +
+            "AND (#{storeId} IS NULL OR cc.store_id = #{storeId}) " +
+            "GROUP BY cc.store_id")
+    List<Map<String, Object>> rankByStore(@Param("start") LocalDateTime start,
+                                           @Param("end") LocalDateTime end,
+                                           @Param("storeId") Long storeId);
 }

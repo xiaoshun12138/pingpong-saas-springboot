@@ -3,9 +3,7 @@ package com.pingpong.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.pingpong.common.R;
-import com.pingpong.entity.CourseConsumption;
 import com.pingpong.entity.LessonSchedule;
-import com.pingpong.service.ICourseConsumptionService;
 import com.pingpong.service.ILessonScheduleService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -14,7 +12,6 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
 
 /**
  * 排课记录控制器
@@ -28,9 +25,6 @@ public class LessonScheduleController {
     /** 排课记录 Service */
     @Autowired
     private ILessonScheduleService lessonScheduleService;
-
-    @Autowired
-    private ICourseConsumptionService courseConsumptionService;
 
     /**
      * 分页查询排课列表
@@ -79,40 +73,14 @@ public class LessonScheduleController {
     }
 
     /**
-     * 新增排课（同时自动消课1课时）
-     * 
-     * 排课保存成功后，自动调用消课流程：
-     * 插入消课记录 → 扣减订单剩余课时 → 扣减学员总剩余课时
-     *
-     * @param schedule 排课信息
-     * @return 操作结果
+     * 新增排课（同时自动消课1课时，同一事务）
      */
     @PostMapping
     public R<?> save(@Valid @RequestBody LessonSchedule schedule) {
-        schedule.setStatus("scheduled");
-        boolean ok = lessonScheduleService.save(schedule);
-        if (!ok) return R.fail("排课失败");
-
-        // 排课成功 → 自动消课1课时
-        if (schedule.getCourseOrderId() != null && schedule.getStudentId() != null 
-                && schedule.getCoachId() != null) {
-            try {
-                CourseConsumption consumption = new CourseConsumption();
-                consumption.setStudentId(schedule.getStudentId());
-                consumption.setCoachId(schedule.getCoachId());
-                consumption.setCourseOrderId(schedule.getCourseOrderId());
-                consumption.setStoreId(schedule.getStoreId());
-                consumption.setLessons(1);
-                consumption.setRecordDate(schedule.getScheduleDate());
-                consumption.setRecordTime(schedule.getStartTime() != null 
-                        ? schedule.getStartTime() : LocalTime.of(9, 0));
-                consumption.setRemark(schedule.getLessonContent() != null 
-                        ? schedule.getLessonContent() : "排课消课");
-                courseConsumptionService.consumeLesson(consumption);
-            } catch (Exception e) {
-                // 消课失败不影排课，但提示用户
-                return R.ok("排课成功，但消课失败：" + e.getMessage());
-            }
+        try {
+            lessonScheduleService.saveAndConsume(schedule);
+        } catch (Exception e) {
+            return R.fail(e.getMessage());
         }
         return R.ok("排课并消课成功");
     }
@@ -130,14 +98,15 @@ public class LessonScheduleController {
     }
 
     /**
-     * 取消排课（逻辑删除）
-     *
-     * @param id 排课ID
-     * @return 操作结果
+     * 取消排课（逻辑删除 + 归还已扣课时，同一事务）
      */
     @DeleteMapping("/{id}")
     public R<?> delete(@PathVariable Long id) {
-        boolean ok = lessonScheduleService.removeById(id);
-        return ok ? R.ok("已取消排课") : R.fail("取消失败");
+        try {
+            lessonScheduleService.cancelAndRefund(id);
+        } catch (Exception e) {
+            return R.fail(e.getMessage());
+        }
+        return R.ok("已取消排课并归还课时");
     }
 }

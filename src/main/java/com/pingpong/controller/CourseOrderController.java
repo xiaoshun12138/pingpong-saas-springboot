@@ -47,6 +47,8 @@ public class CourseOrderController {
                                      @RequestParam(defaultValue = "10") Integer size,
                                      @RequestParam(required = false) Long storeId,
                                      @RequestParam(required = false) String keyword,
+                                     @RequestParam(required = false) String startDate,
+                                     @RequestParam(required = false) String endDate,
                                      HttpServletRequest request) {
         String role = (String) request.getAttribute("role");
         Long myStoreId = (Long) request.getAttribute("storeId");
@@ -59,6 +61,8 @@ public class CourseOrderController {
                 .eq(courseOrder.getSalesId() != null, CourseOrder::getSalesId, courseOrder.getSalesId())
                 .eq(courseOrder.getCoachId() != null, CourseOrder::getCoachId, courseOrder.getCoachId())
                 .eq(courseOrder.getStatus() != null, CourseOrder::getStatus, courseOrder.getStatus())
+                .ge(startDate != null && !startDate.isBlank(), CourseOrder::getCreatedAt, startDate)
+                .le(endDate != null && !endDate.isBlank(), CourseOrder::getCreatedAt, endDate)
                 .and(keyword != null && !keyword.isBlank(), w -> {
                     List<Long> studentIds = studentMapper.selectList(
                             new LambdaQueryWrapper<Student>()
@@ -162,15 +166,8 @@ public class CourseOrderController {
         order.setStatus("active");
         order.setType("new");
 
-        boolean ok = courseOrderService.save(order);
-        if (!ok) return R.fail("新增失败");
-
-        // 6. 同步累加学员剩余总课时（保证 student.total_remaining_lessons 与订单一致）
-        Student studentUpdate = new Student();
-        studentUpdate.setId(student.getId());
-        studentUpdate.setTotalRemainingLessons(order.getTotalLessons());
-        studentUpdate.setVersion(student.getVersion());
-        studentService.updateById(studentUpdate);
+        // 6. 事务保存：创建学员 + 保存订单 + 累加课时（同一事务，失败全回滚）
+        courseOrderService.createOrderWithNewStudent(order, student);
 
         return R.ok();
     }
@@ -248,15 +245,8 @@ public class CourseOrderController {
         order.setStatus("active");
         order.setType("renew");
 
-        boolean ok = courseOrderService.save(order);
-        if (!ok) return R.fail("续费失败");
-
-        // 同步累加学员剩余总课时
-        Student studentUpdate = new Student();
-        studentUpdate.setId(student.getId());
-        studentUpdate.setTotalRemainingLessons(student.getTotalRemainingLessons() + order.getTotalLessons());
-        studentUpdate.setVersion(student.getVersion());
-        studentService.updateById(studentUpdate);
+        // 事务保存：保存订单 + 累加课时（同一事务，失败全回滚）
+        courseOrderService.renewOrder(order, student);
 
         return R.ok();
     }

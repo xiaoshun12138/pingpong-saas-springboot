@@ -23,6 +23,7 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
      */
     @Select("SELECT MONTH(created_at) AS m, COALESCE(SUM(paid_amount), 0) AS total " +
             "FROM course_order WHERE 1=1 " +
+            "AND deleted = 0 AND status != 'refunded' " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId}) " +
             "GROUP BY MONTH(created_at) ORDER BY m")
@@ -36,6 +37,7 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
      */
     @Select("SELECT store_id AS storeId, MONTH(created_at) AS m, COALESCE(SUM(paid_amount), 0) AS total " +
             "FROM course_order WHERE 1=1 " +
+            "AND deleted = 0 AND status != 'refunded' " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId}) " +
             "GROUP BY store_id, MONTH(created_at) ORDER BY store_id, m")
@@ -49,6 +51,7 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
      */
     @Select("SELECT store_id AS storeId, COALESCE(SUM(paid_amount), 0) AS total, COUNT(*) AS cnt " +
             "FROM course_order WHERE 1=1 " +
+            "AND deleted = 0 AND status != 'refunded' " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId}) " +
             "GROUP BY store_id")
@@ -62,6 +65,7 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
      */
     @Select("SELECT DAY(created_at) AS d, COALESCE(SUM(paid_amount), 0) AS total " +
             "FROM course_order WHERE 1=1 " +
+            "AND deleted = 0 AND status != 'refunded' " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId}) " +
             "GROUP BY DAY(created_at) ORDER BY d")
@@ -73,6 +77,7 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
      * 带时间范围的 COUNT
      */
     @Select("SELECT COUNT(*) FROM course_order WHERE 1=1 " +
+            "AND deleted = 0 " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId})")
     Long countInRange(@Param("start") LocalDateTime start,
@@ -83,6 +88,7 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
      * 带时间范围的 SUM(paid_amount)
      */
     @Select("SELECT COALESCE(SUM(paid_amount), 0) FROM course_order WHERE 1=1 " +
+            "AND deleted = 0 AND status != 'refunded' " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId})")
     BigDecimal sumAmountInRange(@Param("start") LocalDateTime start,
@@ -93,6 +99,7 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
      * 按订单类型统计笔数（new=新报 / renew=续费）
      */
     @Select("SELECT COUNT(*) FROM course_order WHERE 1=1 " +
+            "AND deleted = 0 " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND type = #{type} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId})")
@@ -105,6 +112,7 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
      * 按订单类型统计金额（new=新报 / renew=续费）
      */
     @Select("SELECT COALESCE(SUM(paid_amount), 0) FROM course_order WHERE 1=1 " +
+            "AND deleted = 0 AND status != 'refunded' " +
             "AND created_at >= #{start} AND created_at <= #{end} " +
             "AND type = #{type} " +
             "AND (#{storeId} IS NULL OR store_id = #{storeId})")
@@ -133,4 +141,53 @@ public interface CourseOrderMapper extends BaseMapper<CourseOrder> {
             "  AND o.deleted = 0 " +
             "ORDER BY o.created_at DESC")
     List<com.pingpong.vo.StudentOrderVO> getStudentOrders(@Param("studentId") Long studentId);
+
+    // ===== 排名聚合方法（SQL GROUP BY 替代内存聚合） =====
+
+    /**
+     * 教练业绩排名聚合（按 coach_id 分组）
+     */
+    @Select("SELECT o.coach_id AS staffId, " +
+            "COALESCE(SUM(o.paid_amount), 0) AS amount, " +
+            "COUNT(*) AS cnt " +
+            "FROM course_order o " +
+            "WHERE o.deleted = 0 AND o.status != 'refunded' " +
+            "AND o.created_at >= #{start} AND o.created_at <= #{end} " +
+            "AND (#{storeId} IS NULL OR o.store_id = #{storeId}) " +
+            "AND o.coach_id IS NOT NULL " +
+            "GROUP BY o.coach_id")
+    List<Map<String, Object>> rankByCoach(@Param("start") LocalDateTime start,
+                                           @Param("end") LocalDateTime end,
+                                           @Param("storeId") Long storeId);
+
+    /**
+     * 销售业绩排名聚合（按 sales_id 分组）
+     */
+    @Select("SELECT o.sales_id AS staffId, " +
+            "COALESCE(SUM(o.paid_amount), 0) AS amount, " +
+            "COUNT(*) AS cnt " +
+            "FROM course_order o " +
+            "WHERE o.deleted = 0 AND o.status != 'refunded' " +
+            "AND o.created_at >= #{start} AND o.created_at <= #{end} " +
+            "AND (#{storeId} IS NULL OR o.store_id = #{storeId}) " +
+            "AND o.sales_id IS NOT NULL " +
+            "GROUP BY o.sales_id")
+    List<Map<String, Object>> rankBySales(@Param("start") LocalDateTime start,
+                                           @Param("end") LocalDateTime end,
+                                           @Param("storeId") Long storeId);
+
+    /**
+     * 门店业绩排名聚合（按 store_id 分组）
+     */
+    @Select("SELECT o.store_id AS storeId, " +
+            "COALESCE(SUM(o.paid_amount), 0) AS amount, " +
+            "COUNT(*) AS cnt " +
+            "FROM course_order o " +
+            "WHERE o.deleted = 0 AND o.status != 'refunded' " +
+            "AND o.created_at >= #{start} AND o.created_at <= #{end} " +
+            "AND (#{storeId} IS NULL OR o.store_id = #{storeId}) " +
+            "GROUP BY o.store_id")
+    List<Map<String, Object>> rankByStore(@Param("start") LocalDateTime start,
+                                           @Param("end") LocalDateTime end,
+                                           @Param("storeId") Long storeId);
 }

@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 排名数据控制器
@@ -37,12 +38,16 @@ public class RankingController {
             @RequestParam(defaultValue = "false") Boolean asc,
             @RequestParam(defaultValue = "1") Integer current,
             @RequestParam(defaultValue = "10") Integer size,
+            @RequestParam(required = false) String keyword,
             HttpServletRequest request) {
         String role = (String) request.getAttribute("role");
         Long myStoreId = (Long) request.getAttribute("storeId");
         Long filterStoreId = "boss".equals(role) ? storeId : myStoreId;
 
         List<RankingItem> all = dashboardService.coachLessonRanking(filterStoreId, sortBy, asc, 0);
+        if (keyword != null && !keyword.isBlank()) {
+            all = all.stream().filter(r -> r.getStaffName() != null && r.getStaffName().contains(keyword)).collect(Collectors.toList());
+        }
         return R.ok(pageList(all, current, size));
     }
 
@@ -58,12 +63,16 @@ public class RankingController {
             @RequestParam(defaultValue = "false") Boolean asc,
             @RequestParam(defaultValue = "1") Integer current,
             @RequestParam(defaultValue = "10") Integer size,
+            @RequestParam(required = false) String keyword,
             HttpServletRequest request) {
         String role = (String) request.getAttribute("role");
         Long myStoreId = (Long) request.getAttribute("storeId");
         Long filterStoreId = "boss".equals(role) ? storeId : myStoreId;
 
         List<RankingItem> all = dashboardService.performanceRanking(type, filterStoreId, sortBy, asc, 0);
+        if (keyword != null && !keyword.isBlank()) {
+            all = all.stream().filter(r -> r.getStaffName() != null && r.getStaffName().contains(keyword)).collect(Collectors.toList());
+        }
         return R.ok(pageList(all, current, size));
     }
 

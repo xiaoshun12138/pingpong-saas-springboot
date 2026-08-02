@@ -40,6 +40,8 @@ public class RefundLogController {
                                    @RequestParam(defaultValue = "1") Integer current,
                                    @RequestParam(defaultValue = "10") Integer size,
                                    @RequestParam(required = false) String keyword,
+                                   @RequestParam(required = false) String startDate,
+                                   @RequestParam(required = false) String endDate,
                                    HttpServletRequest request) {
         String role = (String) request.getAttribute("role");
         Long myStoreId = (Long) request.getAttribute("storeId");
@@ -47,6 +49,8 @@ public class RefundLogController {
 
         LambdaQueryWrapper<RefundLog> wrapper = new LambdaQueryWrapper<RefundLog>()
                 .eq(filterStoreId != null, RefundLog::getStoreId, filterStoreId)
+                .ge(startDate != null && !startDate.isBlank(), RefundLog::getCreatedAt, startDate)
+                .le(endDate != null && !endDate.isBlank(), RefundLog::getCreatedAt, endDate)
                 .orderByDesc(RefundLog::getCreatedAt);
 
         if (keyword != null && !keyword.isBlank()) {

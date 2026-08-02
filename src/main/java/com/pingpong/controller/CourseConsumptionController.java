@@ -39,6 +39,8 @@ public class CourseConsumptionController {
                                            @RequestParam(defaultValue = "10") Integer size,
                                            @RequestParam(required = false) Long storeId,
                                            @RequestParam(required = false) String keyword,
+                                           @RequestParam(required = false) String startDate,
+                                           @RequestParam(required = false) String endDate,
                                            HttpServletRequest request) {
         String role = (String) request.getAttribute("role");
         Long myStoreId = (Long) request.getAttribute("storeId");
@@ -46,6 +48,8 @@ public class CourseConsumptionController {
 
         LambdaQueryWrapper<CourseConsumption> wrapper = new LambdaQueryWrapper<CourseConsumption>()
                 .eq(filterStoreId != null, CourseConsumption::getStoreId, filterStoreId)
+                .ge(startDate != null && !startDate.isBlank(), CourseConsumption::getRecordDate, startDate)
+                .le(endDate != null && !endDate.isBlank(), CourseConsumption::getRecordDate, endDate)
                 .orderByDesc(CourseConsumption::getId);
 
         if (keyword != null && !keyword.isBlank()) {
