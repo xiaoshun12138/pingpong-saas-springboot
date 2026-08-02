@@ -18,6 +18,13 @@ import java.util.Map;
 public interface CourseConsumptionMapper extends BaseMapper<CourseConsumption> {
 
     /**
+     * 物理删除指定排课记录对应的消课记录（绕过 @TableLogic）
+     * 用于取消排课时同步删除消课记录
+     */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM course_consumption WHERE schedule_id = #{scheduleId}")
+    int physicalDeleteByScheduleId(@Param("scheduleId") Long scheduleId);
+
+    /**
      * 按月份聚合消课课时（单条SQL替掉12条逐月查询）
      * @return [{m: 1, lessons: 5000}, ...]
      */

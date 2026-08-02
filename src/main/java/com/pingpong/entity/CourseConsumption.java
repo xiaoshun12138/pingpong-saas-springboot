@@ -39,6 +39,9 @@ public class CourseConsumption implements Serializable {
     @NotNull(message = "关联订单不能为空")
     private Long courseOrderId;
 
+    /** 关联的排课记录ID（从排课页面消课时自动填入，消课记录页面直接消课则为 null） */
+    private Long scheduleId;
+
     /** 本次消耗的课时数，必须大于0 */
     @NotNull(message = "消课课时不能为空")
     @Positive(message = "消课课时必须大于0")

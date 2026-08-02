@@ -30,6 +30,12 @@ public class CourseConsumptionController {
     @Autowired
     private StudentMapper studentMapper;
 
+    @Autowired
+    private com.pingpong.service.ILessonScheduleService lessonScheduleService;
+
+    @Autowired
+    private com.pingpong.service.ICourseOrderService courseOrderService;
+
     /**
      * 分页查询消课记录，支持按学员姓名搜索。
      */
@@ -79,7 +85,34 @@ public class CourseConsumptionController {
 
     @PostMapping
     public R<?> save(@Valid @RequestBody CourseConsumption courseConsumption) {
-        courseConsumptionService.consumeLesson(courseConsumption);
+        // 消课记录页面新增消课 → 同时创建排课记录（统一入口，保证排课页面可见）
+        if (courseConsumption.getScheduleId() == null) {
+            // 从订单获取 storeId（前端表单不传）
+            Long storeId = courseConsumption.getStoreId();
+            if (storeId == null && courseConsumption.getCourseOrderId() != null) {
+                com.pingpong.entity.CourseOrder order = courseOrderService.getById(courseConsumption.getCourseOrderId());
+                if (order != null) {
+                    storeId = order.getStoreId();
+                }
+            }
+            // 没有 scheduleId 说明是从消课记录页面直接新增的，创建对应排课记录
+            com.pingpong.entity.LessonSchedule schedule = new com.pingpong.entity.LessonSchedule();
+            schedule.setStoreId(storeId);
+            schedule.setCoachId(courseConsumption.getCoachId());
+            schedule.setStudentId(courseConsumption.getStudentId());
+            schedule.setCourseOrderId(courseConsumption.getCourseOrderId());
+            schedule.setScheduleDate(courseConsumption.getRecordDate());
+            schedule.setStartTime(courseConsumption.getRecordTime() != null
+                    ? courseConsumption.getRecordTime() : java.time.LocalTime.of(9, 0));
+            schedule.setEndTime(courseConsumption.getRecordTime() != null
+                    ? courseConsumption.getRecordTime().plusHours(1).withMinute(30)
+                    : java.time.LocalTime.of(10, 30));
+            schedule.setLessonContent(courseConsumption.getRemark() != null ? courseConsumption.getRemark() : "消课记录新增");
+            schedule.setStatus("scheduled");
+            lessonScheduleService.saveAndConsume(schedule);
+        } else {
+            courseConsumptionService.consumeLesson(courseConsumption);
+        }
         return R.ok("消课成功");
     }
 

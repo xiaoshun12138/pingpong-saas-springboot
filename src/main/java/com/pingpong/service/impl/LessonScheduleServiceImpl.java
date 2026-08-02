@@ -2,6 +2,7 @@ package com.pingpong.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.pingpong.entity.*;
+import com.pingpong.mapper.CourseConsumptionMapper;
 import com.pingpong.mapper.LessonScheduleMapper;
 import com.pingpong.service.*;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,8 @@ public class LessonScheduleServiceImpl extends ServiceImpl<LessonScheduleMapper,
     private ICourseOrderService courseOrderService;
     @Autowired
     private IStudentService studentService;
+    @Autowired
+    private CourseConsumptionMapper courseConsumptionMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -47,6 +50,7 @@ public class LessonScheduleServiceImpl extends ServiceImpl<LessonScheduleMapper,
             consumption.setStudentId(schedule.getStudentId());
             consumption.setCoachId(schedule.getCoachId());
             consumption.setCourseOrderId(schedule.getCourseOrderId());
+            consumption.setScheduleId(schedule.getId());
             consumption.setStoreId(schedule.getStoreId());
             consumption.setLessons(1);
             consumption.setRecordDate(schedule.getScheduleDate());
@@ -66,14 +70,18 @@ public class LessonScheduleServiceImpl extends ServiceImpl<LessonScheduleMapper,
             throw new RuntimeException("排课记录不存在");
         }
 
-        // 1. 逻辑删除排课记录
-        boolean ok = this.removeById(scheduleId);
+        // 1. 物理删除排课记录（逻辑删除会与唯一索引冲突：同组合第二次取消时旧记录 deleted=1 仍在）
+        boolean ok = this.getBaseMapper().physicalDeleteById(scheduleId) > 0;
         if (!ok) {
             throw new RuntimeException("取消排课失败");
         }
 
-        // 2. 归还已扣课时（只有已消课的排课才需要归还）
-        if (schedule.getCourseOrderId() != null && schedule.getStudentId() != null) {
+        // 2. 物理删除对应的消课记录（取消排课 = 撤销消课，消课记录无审计必要）
+        int deletedConsumptions = courseConsumptionMapper.physicalDeleteByScheduleId(scheduleId);
+        log.info("取消排课：排课ID={}, 删除消课记录{}条", scheduleId, deletedConsumptions);
+
+        // 3. 归还已扣课时（只有已消课的排课才需要归还）
+        if (schedule.getCourseOrderId() != null && schedule.getStudentId() != null && deletedConsumptions > 0) {
             CourseOrder order = courseOrderService.getById(schedule.getCourseOrderId());
             if (order != null && "active".equals(order.getStatus())) {
                 // 订单剩余课时 +1，已消课时 -1
