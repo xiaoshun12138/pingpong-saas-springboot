@@ -51,6 +51,7 @@ public class CustomerPoolController {
             case "totalLessons" -> "totalLessons";
             case "remainingLessons" -> "remainingLessons";
             case "lastLessonAt" -> "lastLessonAt";
+            case "orderCount" -> "orderCount";
             default -> "totalPaid";
         };
         String sortDir = "asc".equalsIgnoreCase(sortOrder) ? "ASC" : "DESC";
