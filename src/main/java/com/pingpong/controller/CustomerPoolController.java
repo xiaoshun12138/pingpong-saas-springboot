@@ -48,7 +48,7 @@ public class CustomerPoolController {
         // 排序字段白名单
         String sortColumn = switch (sortBy) {
             case "totalPaid" -> "totalPaid";
-            case "totalLessons" -> "totalLessons";
+            case "totalConsumedLessons" -> "totalConsumedLessons";
             case "remainingLessons" -> "remainingLessons";
             case "lastLessonAt" -> "lastLessonAt";
             case "orderCount" -> "orderCount";
