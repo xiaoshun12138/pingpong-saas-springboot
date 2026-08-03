@@ -126,4 +126,64 @@ public class CustomerPoolController {
         List<Map<String, Object>> list = studentMapper.suggestRenewList(filterStoreId, maxRemainingLessons);
         return R.ok(list);
     }
+
+    /**
+     * 流失学员列表：课时耗尽（剩余=0）但仍活跃的学员
+     */
+    @GetMapping("/churned")
+    public R<Page<Map<String, Object>>> churned(
+            @RequestParam(defaultValue = "1") Integer current,
+            @RequestParam(defaultValue = "20") Integer size,
+            @RequestParam(required = false) Long storeId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "totalPaid") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortOrder,
+            HttpServletRequest request) {
+
+        String role = (String) request.getAttribute("role");
+        Long myStoreId = (Long) request.getAttribute("storeId");
+        Long filterStoreId = "boss".equals(role) ? storeId : myStoreId;
+
+        String sortColumn = switch (sortBy) {
+            case "totalPaid" -> "totalPaid";
+            case "totalConsumedLessons" -> "totalConsumedLessons";
+            case "remainingLessons" -> "remainingLessons";
+            case "lastLessonAt" -> "lastLessonAt";
+            case "orderCount" -> "orderCount";
+            default -> "totalPaid";
+        };
+        String sortDir = "asc".equalsIgnoreCase(sortOrder) ? "ASC" : "DESC";
+
+        Long total = studentMapper.countChurned(filterStoreId, keyword);
+        if (total == null) total = 0L;
+
+        Integer offset = (current - 1) * size;
+        List<Map<String, Object>> records = studentMapper.churnedList(
+                filterStoreId, keyword, sortColumn, sortDir, size, offset);
+
+        if (records != null && !records.isEmpty()) {
+            for (Map<String, Object> r : records) {
+                Object lastLessonAt = r.get("lastLessonAt");
+                if (lastLessonAt != null) {
+                    java.time.LocalDateTime ldt;
+                    if (lastLessonAt instanceof java.time.LocalDateTime l) {
+                        ldt = l;
+                    } else if (lastLessonAt instanceof String s) {
+                        ldt = java.time.LocalDateTime.parse(s.replace(" ", "T"));
+                    } else {
+                        ldt = null;
+                    }
+                    if (ldt != null) {
+                        long days = java.time.Duration.between(ldt, java.time.LocalDateTime.now()).toDays();
+                        r.put("daysSinceLastLesson", days);
+                    }
+                }
+            }
+        }
+
+        Page<Map<String, Object>> page = new Page<>(current, size);
+        page.setTotal(total);
+        page.setRecords(records != null ? records : List.of());
+        return R.ok(page);
+    }
 }
