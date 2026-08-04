@@ -58,7 +58,7 @@ cd pingpong-saas-springboot
 CREATE DATABASE pingpong_saas DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 ```
 
-> 建表 SQL 和模拟数据脚本见 `sql/` 目录（或联系作者获取）。
+> 建表 SQL 和模拟数据脚本见 `sql/` 目录。导入：`mysql -u root -p pingpong_saas < sql/pingpong_saas_dump.sql`</newText>
 
 ### 3. 修改配置
 
