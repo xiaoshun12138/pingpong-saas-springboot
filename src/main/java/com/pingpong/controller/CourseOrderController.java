@@ -139,8 +139,6 @@ public class CourseOrderController {
         student.setPrimaryCoachId(order.getCoachId());
         student.setStatus(1);
         student.setRegisteredAt(LocalDateTime.now());
-        studentService.save(student);
-        order.setStudentId(student.getId());
         order.setStoreId(storeId);
 
         // 3. 主管教练和销售由前端下拉框传入，直接使用 order.coachId / order.salesId
